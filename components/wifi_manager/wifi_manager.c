@@ -16,7 +16,7 @@
 
 #define AP_SSID       "bluepass"
 #define AP_PASS       ""                // open AP for initial setup
-#define LED_GPIO      GPIO_NUM_2        // adjust to actual LED pin
+#define LED_GPIO      GPIO_NUM_21       // blue LED on ESP32-S3 SuperMini
 
 #define WIFI_CONNECTED_BIT BIT0
 #define WIFI_FAIL_BIT      BIT1
@@ -138,6 +138,14 @@ static void wifi_event_handler(void *arg, esp_event_base_t base,
 esp_err_t wifi_manager_init(void)
 {
     s_wifi_events = xEventGroupCreate();
+
+    const gpio_config_t led_cfg = {
+        .pin_bit_mask = 1ULL << LED_GPIO,
+        .mode         = GPIO_MODE_OUTPUT,
+        .intr_type    = GPIO_INTR_DISABLE,
+    };
+    gpio_config(&led_cfg);
+    gpio_set_level(LED_GPIO, LED_OFF);
 
     ESP_ERROR_CHECK(esp_netif_init());
     esp_netif_create_default_wifi_sta();

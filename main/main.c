@@ -25,7 +25,7 @@ static void on_jiggler_state(bool enabled)
 
 // GPIO0 is the BOOT button present on ESP32-S3 SuperMini
 #define GPIO_BUTTON        GPIO_NUM_0
-#define GPIO_LED           GPIO_NUM_2   // adjust if LED is on a different pin
+#define GPIO_LED           GPIO_NUM_21  // blue LED on ESP32-S3 SuperMini (owned by wifi_manager)
 #define LONG_PRESS_US      (10 * 1000 * 1000)  // 10 seconds in microseconds
 
 static esp_timer_handle_t s_btn_timer;
@@ -94,13 +94,6 @@ static void gpio_init(void)
         .intr_type    = GPIO_INTR_ANYEDGE,
     };
     ESP_ERROR_CHECK(gpio_config(&btn_cfg));
-
-    const gpio_config_t led_cfg = {
-        .pin_bit_mask = 1ULL << GPIO_LED,
-        .mode         = GPIO_MODE_OUTPUT,
-        .intr_type    = GPIO_INTR_DISABLE,
-    };
-    ESP_ERROR_CHECK(gpio_config(&led_cfg));
 
     ESP_ERROR_CHECK(gpio_install_isr_service(0));
     ESP_ERROR_CHECK(gpio_isr_handler_add(GPIO_BUTTON, btn_isr, NULL));
