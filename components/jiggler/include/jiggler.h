@@ -12,3 +12,6 @@ esp_err_t jiggler_enable(void);
 esp_err_t jiggler_disable(void);
 esp_err_t jiggler_toggle(void);
 bool      jiggler_is_enabled(void);
+
+// Optional callback fired whenever jiggler is enabled or disabled
+void jiggler_set_state_cb(void (*cb)(bool enabled));

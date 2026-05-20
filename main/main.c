@@ -15,6 +15,11 @@
 #include "web_ui.h"
 #include "jiggler.h"
 
+static void on_jiggler_state(bool enabled)
+{
+    wifi_manager_set_jiggler_active(enabled);
+}
+
 #define TAG "bluepass"
 
 // GPIO0 is the BOOT button present on ESP32-S3 SuperMini
@@ -127,6 +132,7 @@ void app_main(void)
     ESP_ERROR_CHECK(ble_hid_host_init(on_ble_report, NULL));
     ESP_ERROR_CHECK(hotkey_engine_init());
     ESP_ERROR_CHECK(jiggler_init());
+    jiggler_set_state_cb(on_jiggler_state);
 
     // Restore jiggler config including enabled state
     jiggler_config_t jig_cfg;

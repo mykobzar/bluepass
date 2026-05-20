@@ -22,21 +22,58 @@
 #define WIFI_FAIL_BIT      BIT1
 #define MAX_RETRY          5
 
+// ── LED blink periods ─────────────────────────────────────────────────────────
+#define LED_FAST_US  (100 * 1000)   // 100 ms per toggle → 5 Hz (WiFi issue)
+#define LED_SLOW_US  (500 * 1000)   // 500 ms per toggle → 1 Hz (jiggler active)
+#define LED_PULSE_US (150 * 1000)   // 150 ms one-shot pulse (substitution)
+
 static EventGroupHandle_t s_wifi_events;
 static int s_retry_count;
 static wifi_mgr_state_t s_state = WIFI_MGR_STATE_DISCONNECTED;
 static wifi_mgr_state_cb_t s_state_cb;
 static void *s_state_cb_ctx;
 
-static esp_timer_handle_t s_led_timer;
+static esp_timer_handle_t s_led_timer;    // periodic blink
+static esp_timer_handle_t s_pulse_timer;  // one-shot substitution pulse
 static bool s_led_on;
+static bool s_web_ui_active  = false;
+static bool s_jiggler_active = false;
+
 static volatile bool s_time_synced = false;
 static bool s_sntp_started = false;
 
-static void set_state(wifi_mgr_state_t state)
+// ── LED state machine ─────────────────────────────────────────────────────────
+//
+// Priority (highest first):
+//   1. Web UI active         → solid ON
+//   2. WiFi not connected    → fast blink (100 ms)
+//   3. Jiggler active        → slow blink (500 ms)
+//   4. All clear             → OFF
+
+static void led_apply(void)
 {
-    s_state = state;
-    if (s_state_cb) s_state_cb(state, s_state_cb_ctx);
+    if (!s_led_timer) return;
+
+    esp_timer_stop(s_led_timer);
+
+    if (s_web_ui_active) {
+        gpio_set_level(LED_GPIO, 1);
+        s_led_on = true;
+        return;
+    }
+
+    if (s_state != WIFI_MGR_STATE_CONNECTED) {
+        esp_timer_start_periodic(s_led_timer, LED_FAST_US);
+        return;
+    }
+
+    if (s_jiggler_active) {
+        esp_timer_start_periodic(s_led_timer, LED_SLOW_US);
+        return;
+    }
+
+    gpio_set_level(LED_GPIO, 0);
+    s_led_on = false;
 }
 
 static void led_blink_cb(void *arg)
@@ -45,16 +82,18 @@ static void led_blink_cb(void *arg)
     gpio_set_level(LED_GPIO, s_led_on ? 1 : 0);
 }
 
-static void led_blink_start(void)
+static void led_pulse_end_cb(void *arg)
 {
-    esp_timer_start_periodic(s_led_timer, 500 * 1000); // 500 ms
+    led_apply();
 }
 
-static void led_blink_stop(bool on)
+// ── WiFi state ────────────────────────────────────────────────────────────────
+
+static void set_state(wifi_mgr_state_t state)
 {
-    esp_timer_stop(s_led_timer);
-    gpio_set_level(LED_GPIO, on ? 1 : 0);
-    s_led_on = on;
+    s_state = state;
+    led_apply();
+    if (s_state_cb) s_state_cb(state, s_state_cb_ctx);
 }
 
 static void wifi_event_handler(void *arg, esp_event_base_t base,
@@ -64,9 +103,7 @@ static void wifi_event_handler(void *arg, esp_event_base_t base,
         if (id == WIFI_EVENT_STA_START) {
             esp_wifi_connect();
             set_state(WIFI_MGR_STATE_CONNECTING);
-            led_blink_start();
         } else if (id == WIFI_EVENT_STA_DISCONNECTED) {
-            led_blink_start();
             if (s_retry_count < MAX_RETRY) {
                 esp_wifi_connect();
                 s_retry_count++;
@@ -80,11 +117,12 @@ static void wifi_event_handler(void *arg, esp_event_base_t base,
         s_retry_count = 0;
         xEventGroupSetBits(s_wifi_events, WIFI_CONNECTED_BIT);
         set_state(WIFI_MGR_STATE_CONNECTED);
-        led_blink_stop(true);
         ESP_LOGI(TAG, "connected, syncing time...");
         wifi_manager_sync_time();
     }
 }
+
+// ── Init ──────────────────────────────────────────────────────────────────────
 
 esp_err_t wifi_manager_init(void)
 {
@@ -102,11 +140,17 @@ esp_err_t wifi_manager_init(void)
     esp_event_handler_instance_register(IP_EVENT, IP_EVENT_STA_GOT_IP,
                                         wifi_event_handler, NULL, NULL);
 
-    const esp_timer_create_args_t led_args = {
+    const esp_timer_create_args_t blink_args = {
         .callback = led_blink_cb,
         .name     = "led_blink",
     };
-    esp_timer_create(&led_args, &s_led_timer);
+    esp_timer_create(&blink_args, &s_led_timer);
+
+    const esp_timer_create_args_t pulse_args = {
+        .callback = led_pulse_end_cb,
+        .name     = "led_pulse",
+    };
+    esp_timer_create(&pulse_args, &s_pulse_timer);
 
     if (storage_has_wifi_creds()) {
         wifi_creds_t creds;
@@ -159,7 +203,6 @@ static void sntp_sync_cb(struct timeval *tv)
 esp_err_t wifi_manager_sync_time(void)
 {
     if (s_sntp_started) {
-        // Already running — just trigger a re-sync request
         esp_sntp_restart();
         return ESP_OK;
     }
@@ -180,4 +223,35 @@ void wifi_manager_set_state_cb(wifi_mgr_state_cb_t cb, void *ctx)
 {
     s_state_cb     = cb;
     s_state_cb_ctx = ctx;
+}
+
+// ── LED public API ────────────────────────────────────────────────────────────
+
+void wifi_manager_led_on(void)
+{
+    s_web_ui_active = true;
+    esp_timer_stop(s_pulse_timer);
+    led_apply();
+}
+
+void wifi_manager_led_off(void)
+{
+    s_web_ui_active = false;
+    led_apply();
+}
+
+void wifi_manager_set_jiggler_active(bool active)
+{
+    s_jiggler_active = active;
+    led_apply();
+}
+
+void wifi_manager_led_blink_once(void)
+{
+    if (s_web_ui_active) return;
+    esp_timer_stop(s_led_timer);
+    esp_timer_stop(s_pulse_timer);
+    gpio_set_level(LED_GPIO, 1);
+    s_led_on = true;
+    esp_timer_start_once(s_pulse_timer, LED_PULSE_US);
 }

@@ -190,6 +190,7 @@ esp_err_t usb_hid_device_type_string(const char *str)
         unsigned char c = (unsigned char)*str++;
         if (c == '\n') {
             const uint8_t kc[6] = {HID_KEY_ENTER};
+            if (!wait_hid_ready()) return ESP_ERR_INVALID_STATE;
             tud_hid_keyboard_report(REPORT_ID_KEYBOARD, 0, kc);
             vTaskDelay(pdMS_TO_TICKS(TYPE_INTER_KEY_MS));
             usb_hid_device_send_release();
@@ -201,6 +202,7 @@ esp_err_t usb_hid_device_type_string(const char *str)
         uint8_t kc  = s_ascii_map[c - 0x20].kc;
         uint8_t mod = s_ascii_map[c - 0x20].mod;
         const uint8_t keys[6] = {kc, 0, 0, 0, 0, 0};
+        if (!wait_hid_ready()) return ESP_ERR_INVALID_STATE;
         tud_hid_keyboard_report(REPORT_ID_KEYBOARD, mod, keys);
         vTaskDelay(pdMS_TO_TICKS(TYPE_INTER_KEY_MS));
         usb_hid_device_send_release();
@@ -216,6 +218,7 @@ esp_err_t usb_hid_device_type_unicode(uint32_t codepoint)
     snprintf(hex, sizeof(hex), "%"PRIx32, codepoint);
 
     const uint8_t u_key[6] = {HID_KEY_U};
+    if (!wait_hid_ready()) return ESP_ERR_INVALID_STATE;
     tud_hid_keyboard_report(REPORT_ID_KEYBOARD, HID_MOD_L_CTRL | HID_MOD_L_SHIFT, u_key);
     vTaskDelay(pdMS_TO_TICKS(TYPE_INTER_KEY_MS));
     usb_hid_device_send_release();
@@ -224,6 +227,7 @@ esp_err_t usb_hid_device_type_unicode(uint32_t codepoint)
     usb_hid_device_type_string(hex);
 
     const uint8_t enter[6] = {HID_KEY_ENTER};
+    if (!wait_hid_ready()) return ESP_ERR_INVALID_STATE;
     tud_hid_keyboard_report(REPORT_ID_KEYBOARD, 0, enter);
     vTaskDelay(pdMS_TO_TICKS(TYPE_INTER_KEY_MS));
     usb_hid_device_send_release();

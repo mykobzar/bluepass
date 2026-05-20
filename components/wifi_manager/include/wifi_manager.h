@@ -30,3 +30,12 @@ esp_err_t wifi_manager_sync_time(void);
 bool wifi_manager_is_time_synced(void);
 
 void wifi_manager_set_state_cb(wifi_mgr_state_cb_t cb, void *ctx);
+
+// LED control API:
+//   led_on / led_off  — called by web UI to signal its active/inactive state
+//   set_jiggler_active — called when jiggler is enabled/disabled
+//   led_blink_once    — one-shot pulse on substitution
+void wifi_manager_led_on(void);
+void wifi_manager_led_off(void);
+void wifi_manager_set_jiggler_active(bool active);
+void wifi_manager_led_blink_once(void);

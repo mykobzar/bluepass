@@ -14,6 +14,7 @@
 #include "esp_app_desc.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "esp_timer.h"
 #include "nvs_flash.h"
 #include "cJSON.h"
 #include <string.h>
@@ -23,20 +24,42 @@
 typedef struct { char *url; bool erase_nvs; } ota_fetch_arg_t;
 
 #define TAG "web_ui"
-#define WS_MAX_CLIENTS  5
+#define WS_MAX_CLIENTS      5
+#define WEB_IDLE_TIMEOUT_US (5LL * 60 * 1000 * 1000)  // 5 minutes
 
 // Embedded web assets — single-file SPA built into the firmware
 extern const char index_html_start[] asm("_binary_index_html_start");
 extern const char index_html_end[]   asm("_binary_index_html_end");
 
-static httpd_handle_t s_server;
-static int s_ws_clients[WS_MAX_CLIENTS];
-static int s_ws_count;
+static httpd_handle_t     s_server;
+static int                s_ws_clients[WS_MAX_CLIENTS];
+static int                s_ws_count;
+static esp_timer_handle_t s_idle_timer;
+
+static void idle_stop_task(void *arg)
+{
+    ESP_LOGI(TAG, "idle timeout — stopping web UI");
+    web_ui_stop();
+    vTaskDelete(NULL);
+}
+
+static void idle_timer_cb(void *arg)
+{
+    xTaskCreate(idle_stop_task, "web_idle", 2048, NULL, 4, NULL);
+}
+
+static void bump_idle_timer(void)
+{
+    if (!s_idle_timer || !s_server) return;
+    esp_timer_stop(s_idle_timer);
+    esp_timer_start_once(s_idle_timer, WEB_IDLE_TIMEOUT_US);
+}
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 static esp_err_t send_json(httpd_req_t *req, cJSON *root)
 {
+    bump_idle_timer();
     char *body = cJSON_PrintUnformatted(root);
     httpd_resp_set_type(req, "application/json");
     httpd_resp_sendstr(req, body);
@@ -57,6 +80,7 @@ static esp_err_t send_ok(httpd_req_t *req)
 
 static esp_err_t handler_index(httpd_req_t *req)
 {
+    bump_idle_timer();
     httpd_resp_set_type(req, "text/html");
     httpd_resp_send(req, index_html_start,
                     (ssize_t)(index_html_end - index_html_start));
@@ -67,6 +91,7 @@ static esp_err_t handler_index(httpd_req_t *req)
 
 static esp_err_t handler_ws(httpd_req_t *req)
 {
+    bump_idle_timer();
     if (req->method == HTTP_GET) {
         // New WS handshake — record client fd
         int fd = httpd_req_to_sockfd(req);
@@ -80,6 +105,9 @@ static esp_err_t handler_ws(httpd_req_t *req)
 
 void web_ui_push_key_event(const key_event_t *event, void *ctx)
 {
+    if (event->substituted && !event->failed)
+        wifi_manager_led_blink_once();
+
     if (!s_server || s_ws_count == 0) return;
     const bluepass_hid_report_t *r = &event->report;
     if (r->keyboard.modifier == 0 && r->keyboard.keycode[0] == 0
@@ -420,6 +448,7 @@ static esp_err_t handler_ble_disconnect(httpd_req_t *req)
 
 static esp_err_t handler_ble_log(httpd_req_t *req)
 {
+    bump_idle_timer();
     static char log_buf[2048];
     ble_hid_host_get_log(log_buf, sizeof(log_buf));
     httpd_resp_set_type(req, "text/plain");
@@ -677,14 +706,19 @@ static esp_err_t handler_ota_fetch(httpd_req_t *req)
 
 esp_err_t web_ui_init(void)
 {
-    // Register as key event listener so we can push to WebSocket clients
     hotkey_engine_set_event_cb(web_ui_push_key_event, NULL);
-    return ESP_OK;
+    const esp_timer_create_args_t idle_args = {
+        .callback = idle_timer_cb,
+        .name     = "web_idle",
+    };
+    return esp_timer_create(&idle_args, &s_idle_timer);
 }
 
 esp_err_t web_ui_start(void)
 {
     if (s_server) return ESP_OK;
+
+    wifi_manager_led_on();
 
     httpd_config_t cfg = HTTPD_DEFAULT_CONFIG();
     cfg.uri_match_fn    = httpd_uri_match_wildcard;
@@ -717,6 +751,7 @@ esp_err_t web_ui_start(void)
     for (size_t i = 0; i < sizeof(routes) / sizeof(routes[0]); i++) {
         httpd_register_uri_handler(s_server, &routes[i]);
     }
+    bump_idle_timer();
     ESP_LOGI(TAG, "web UI started");
     return ESP_OK;
 }
@@ -724,9 +759,11 @@ esp_err_t web_ui_start(void)
 esp_err_t web_ui_stop(void)
 {
     if (!s_server) return ESP_OK;
+    esp_timer_stop(s_idle_timer);
     httpd_stop(s_server);
     s_server   = NULL;
     s_ws_count = 0;
+    wifi_manager_led_off();
     ESP_LOGI(TAG, "web UI stopped");
     return ESP_OK;
 }

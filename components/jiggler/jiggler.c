@@ -14,6 +14,10 @@ static struct {
     bool enabled;
 } s_jig;
 
+static void (*s_state_cb)(bool enabled) = NULL;
+
+void jiggler_set_state_cb(void (*cb)(bool enabled)) { s_state_cb = cb; }
+
 static void jiggler_timer_cb(void *arg)
 {
     hid_keyboard_report_t report = {
@@ -61,6 +65,7 @@ esp_err_t jiggler_enable(void)
                                               (uint64_t)s_jig.interval_ms * 1000);
     if (err == ESP_OK) {
         s_jig.enabled = true;
+        if (s_state_cb) s_state_cb(true);
         ESP_LOGI(TAG, "enabled, interval=%"PRIu32"ms, keycode=0x%02X",
                  s_jig.interval_ms, s_jig.keycode);
     }
@@ -72,6 +77,7 @@ esp_err_t jiggler_disable(void)
     if (!s_jig.enabled) return ESP_OK;
     esp_timer_stop(s_jig.timer);
     s_jig.enabled = false;
+    if (s_state_cb) s_state_cb(false);
     ESP_LOGI(TAG, "disabled");
     return ESP_OK;
 }
