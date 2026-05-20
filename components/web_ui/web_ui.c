@@ -544,14 +544,21 @@ static esp_err_t handler_ota_upload(httpd_req_t *req)
         return ESP_FAIL;
     }
 
-    char buf[1024];
+    // Heap buffer: one flash sector per recv → fewer erases, less stack pressure
+    char *buf = malloc(4096);
+    if (!buf) {
+        esp_ota_abort(hdl);
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "out of memory");
+        return ESP_FAIL;
+    }
     int total = req->content_len, done = 0, n;
     s_ota_state = OTA_STATE_RUNNING;
     s_ota_pct   = 0;
     snprintf(s_ota_msg, sizeof(s_ota_msg), "Uploading...");
 
-    while ((n = httpd_req_recv(req, buf, sizeof(buf))) > 0) {
+    while ((n = httpd_req_recv(req, buf, 4096)) > 0) {
         if (esp_ota_write(hdl, buf, n) != ESP_OK) {
+            free(buf);
             esp_ota_abort(hdl);
             s_ota_state = OTA_STATE_ERROR;
             snprintf(s_ota_msg, sizeof(s_ota_msg), "Write error");
@@ -561,6 +568,7 @@ static esp_err_t handler_ota_upload(httpd_req_t *req)
         done += n;
         if (total > 0) s_ota_pct = done * 100 / total;
     }
+    free(buf);
     if (esp_ota_end(hdl) != ESP_OK || esp_ota_set_boot_partition(part) != ESP_OK) {
         s_ota_state = OTA_STATE_ERROR;
         snprintf(s_ota_msg, sizeof(s_ota_msg), "Verify failed");
@@ -733,8 +741,11 @@ esp_err_t web_ui_start(void)
     wifi_manager_led_on();
 
     httpd_config_t cfg = HTTPD_DEFAULT_CONFIG();
-    cfg.uri_match_fn    = httpd_uri_match_wildcard;
+    cfg.uri_match_fn     = httpd_uri_match_wildcard;
     cfg.max_uri_handlers = 20;
+    cfg.stack_size        = 8192;   // default 4096 overflows during OTA (buf[1024] + flash writes)
+    cfg.recv_wait_timeout = 30;     // seconds; default 5 is too short for ~1.3 MB upload over WiFi
+    cfg.send_wait_timeout = 30;
 
     ESP_RETURN_ON_ERROR(httpd_start(&s_server, &cfg), TAG, "httpd start failed");
 
