@@ -25,7 +25,6 @@ static void on_jiggler_state(bool enabled)
 
 // GPIO0 is the BOOT button present on ESP32-S3 SuperMini
 #define GPIO_BUTTON        GPIO_NUM_0
-#define GPIO_LED           GPIO_NUM_21  // blue LED on ESP32-S3 SuperMini (owned by wifi_manager)
 #define LONG_PRESS_US      (10 * 1000 * 1000)  // 10 seconds in microseconds
 
 static esp_timer_handle_t s_btn_timer;

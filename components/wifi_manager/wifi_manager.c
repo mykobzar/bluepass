@@ -7,29 +7,42 @@
 #include "esp_netif.h"
 #include "esp_sntp.h"
 #include "esp_timer.h"
-#include "driver/gpio.h"
+#include "led_strip.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/event_groups.h"
 #include <string.h>
 
 #define TAG "wifi_mgr"
 
-#define AP_SSID       "bluepass"
-#define AP_PASS       ""                // open AP for initial setup
-#define LED_GPIO      GPIO_NUM_21       // blue LED on ESP32-S3 SuperMini
+#define AP_SSID  "bluepass"
+#define AP_PASS  ""                 // open AP for initial setup
+#define LED_GPIO GPIO_NUM_48        // WS2812 RGB LED on ESP32-S3 SuperMini
 
 #define WIFI_CONNECTED_BIT BIT0
 #define WIFI_FAIL_BIT      BIT1
 #define MAX_RETRY          5
 
 // ── LED blink periods ─────────────────────────────────────────────────────────
-#define LED_FAST_US  (100 * 1000)   // 100 ms per toggle → 5 Hz (WiFi issue)
-#define LED_SLOW_US  (500 * 1000)   // 500 ms per toggle → 1 Hz (jiggler active)
-#define LED_PULSE_US (150 * 1000)   // 150 ms one-shot pulse (substitution)
+#define LED_FAST_US  (100 * 1000)   // 100 ms per toggle → 5 Hz  (WiFi error)
+#define LED_SLOW_US  (500 * 1000)   // 500 ms per toggle → 1 Hz  (jiggler)
+#define LED_PULSE_US (150 * 1000)   // 150 ms one-shot pulse      (substitution)
 
-// LED is active-LOW: cathode → GPIO, anode → 3.3 V
-#define LED_ON  0
-#define LED_OFF 1
+// RGB colours (0-255, moderate brightness to avoid eye strain)
+#define RED_R   35
+#define RED_G    0
+#define RED_B    0
+
+#define GREEN_R  0
+#define GREEN_G 35
+#define GREEN_B  0
+
+#define BLUE_R   0
+#define BLUE_G   0
+#define BLUE_B  35
+
+#define WHITE_R 20
+#define WHITE_G 20
+#define WHITE_B 20
 
 static EventGroupHandle_t s_wifi_events;
 static int s_retry_count;
@@ -39,20 +52,36 @@ static void *s_state_cb_ctx;
 
 static esp_timer_handle_t s_led_timer;    // periodic blink
 static esp_timer_handle_t s_pulse_timer;  // one-shot substitution pulse
-static bool s_led_on;
-static bool s_web_ui_active  = false;
-static bool s_jiggler_active = false;
+static led_strip_handle_t s_led_strip;
+
+static bool    s_led_on;
+static uint8_t s_blink_r, s_blink_g, s_blink_b;
+static bool    s_web_ui_active  = false;
+static bool    s_jiggler_active = false;
 
 static volatile bool s_time_synced = false;
 static bool s_sntp_started = false;
 
+// ── LED helpers ───────────────────────────────────────────────────────────────
+
+static void led_set(uint8_t r, uint8_t g, uint8_t b)
+{
+    if (!s_led_strip) return;
+    if (r == 0 && g == 0 && b == 0) {
+        led_strip_clear(s_led_strip);
+    } else {
+        led_strip_set_pixel(s_led_strip, 0, r, g, b);
+        led_strip_refresh(s_led_strip);
+    }
+}
+
 // ── LED state machine ─────────────────────────────────────────────────────────
 //
 // Priority (highest first):
-//   1. Web UI active         → solid ON
-//   2. WiFi not connected    → fast blink (100 ms)
-//   3. Jiggler active        → slow blink (500 ms)
-//   4. All clear             → OFF
+//   1. Web UI active       → solid blue
+//   2. WiFi not connected  → red fast blink (100 ms)
+//   3. Jiggler active      → green slow blink (500 ms)
+//   4. Connected idle      → off
 
 static void led_apply(void)
 {
@@ -61,36 +90,39 @@ static void led_apply(void)
     esp_timer_stop(s_led_timer);
 
     if (s_web_ui_active) {
-        gpio_set_level(LED_GPIO, LED_ON);
+        led_set(BLUE_R, BLUE_G, BLUE_B);
         s_led_on = true;
         return;
     }
 
     if (s_state != WIFI_MGR_STATE_CONNECTED) {
+        s_blink_r = RED_R; s_blink_g = RED_G; s_blink_b = RED_B;
         esp_timer_start_periodic(s_led_timer, LED_FAST_US);
         return;
     }
 
     if (s_jiggler_active) {
+        s_blink_r = GREEN_R; s_blink_g = GREEN_G; s_blink_b = GREEN_B;
         esp_timer_start_periodic(s_led_timer, LED_SLOW_US);
         return;
     }
 
-    gpio_set_level(LED_GPIO, LED_OFF);
+    led_set(0, 0, 0);
     s_led_on = false;
 }
 
 static void led_blink_cb(void *arg)
 {
-    // Web UI solid-on takes priority — if a stale callback fires after esp_timer_stop(),
-    // we must not let it toggle the LED off.
+    // Web UI solid-blue takes priority — stale callback must not override it.
     if (s_web_ui_active) {
-        gpio_set_level(LED_GPIO, LED_ON);
+        led_set(BLUE_R, BLUE_G, BLUE_B);
         s_led_on = true;
         return;
     }
     s_led_on = !s_led_on;
-    gpio_set_level(LED_GPIO, s_led_on ? LED_ON : LED_OFF);
+    led_set(s_led_on ? s_blink_r : 0,
+            s_led_on ? s_blink_g : 0,
+            s_led_on ? s_blink_b : 0);
 }
 
 static void led_pulse_end_cb(void *arg)
@@ -139,13 +171,24 @@ esp_err_t wifi_manager_init(void)
 {
     s_wifi_events = xEventGroupCreate();
 
-    const gpio_config_t led_cfg = {
-        .pin_bit_mask = 1ULL << LED_GPIO,
-        .mode         = GPIO_MODE_OUTPUT,
-        .intr_type    = GPIO_INTR_DISABLE,
+    // WS2812 RGB LED via RMT
+    led_strip_config_t strip_cfg = {
+        .strip_gpio_num = LED_GPIO,
+        .max_leds       = 1,
+        .led_model      = LED_MODEL_WS2812,
+        .flags.invert_out = false,
     };
-    gpio_config(&led_cfg);
-    gpio_set_level(LED_GPIO, LED_OFF);
+    led_strip_rmt_config_t rmt_cfg = {
+        .clk_src       = RMT_CLK_SRC_DEFAULT,
+        .resolution_hz = 10 * 1000 * 1000,  // 10 MHz
+    };
+    esp_err_t strip_err = led_strip_new_rmt_device(&strip_cfg, &rmt_cfg, &s_led_strip);
+    if (strip_err != ESP_OK) {
+        ESP_LOGE(TAG, "LED strip init failed: %s", esp_err_to_name(strip_err));
+        s_led_strip = NULL;
+    } else {
+        led_strip_clear(s_led_strip);
+    }
 
     ESP_ERROR_CHECK(esp_netif_init());
     esp_netif_create_default_wifi_sta();
@@ -185,7 +228,7 @@ esp_err_t wifi_manager_init(void)
         esp_wifi_start();
     }
 
-    led_apply();   // initialise LED to match the current WiFi state at boot
+    led_apply();
     return ESP_OK;
 }
 
@@ -253,7 +296,7 @@ void wifi_manager_led_on(void)
     s_web_ui_active = true;
     if (s_led_timer)   esp_timer_stop(s_led_timer);
     if (s_pulse_timer) esp_timer_stop(s_pulse_timer);
-    gpio_set_level(LED_GPIO, LED_ON);
+    led_set(BLUE_R, BLUE_G, BLUE_B);
     s_led_on = true;
 }
 
@@ -274,7 +317,7 @@ void wifi_manager_led_blink_once(void)
     if (s_web_ui_active) return;
     esp_timer_stop(s_led_timer);
     esp_timer_stop(s_pulse_timer);
-    gpio_set_level(LED_GPIO, LED_ON);
+    led_set(WHITE_R, WHITE_G, WHITE_B);
     s_led_on = true;
     esp_timer_start_once(s_pulse_timer, LED_PULSE_US);
 }

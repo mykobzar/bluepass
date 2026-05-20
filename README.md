@@ -2,7 +2,7 @@
 
 > Bluetooth → USB HID bridge with password injection, TOTP codes and jiggler — firmware for ESP32-S3 SuperMini.
 
-![Version](https://img.shields.io/badge/version-0.9.6-blue)
+![Version](https://img.shields.io/badge/version-0.9.7-blue)
 ![ESP-IDF](https://img.shields.io/badge/ESP--IDF-v5.2%2B-blue)
 ![Target](https://img.shields.io/badge/target-ESP32--S3-informational)
 ![License](https://img.shields.io/badge/license-MIT-green)
@@ -57,10 +57,10 @@ Then flash (replace the port with yours):
 # Linux / macOS
 esptool.py --chip esp32s3 --port /dev/ttyUSB0 --baud 460800 write_flash \
   --flash_mode dio --flash_freq 80m --flash_size 4MB \
-  0x0     firmware/bootloader-0.9.6.bin \
-  0x8000  firmware/partition-table-0.9.6.bin \
-  0x10000 firmware/ota_data_initial-0.9.6.bin \
-  0x20000 firmware/bluepass-0.9.6.bin
+  0x0     firmware/bootloader-0.9.7.bin \
+  0x8000  firmware/partition-table-0.9.7.bin \
+  0x10000 firmware/ota_data_initial-0.9.7.bin \
+  0x20000 firmware/bluepass-0.9.7.bin
 
 # Windows — use COM3, COM4, etc.
 esptool.py --chip esp32s3 --port COM3 --baud 460800 write_flash ^
@@ -209,10 +209,10 @@ The paired address is saved to NVS and reconnected automatically on the next boo
 
 | State | LED |
 |---|---|
-| Web interface active | Solid on |
-| WiFi not connected / no credentials | Fast blink (5 Hz) |
-| Jiggler running | Slow blink (1 Hz) |
-| Password / text / TOTP substituted | Single 150 ms flash |
+| Web interface active | Solid **blue** |
+| WiFi not connected / no credentials | **Red** fast blink (5 Hz) |
+| Jiggler running | **Green** slow blink (1 Hz) |
+| Password / text / TOTP substituted | Single white 150 ms flash |
 | Connected, idle | Off |
 
 The web interface **turns off automatically after 5 minutes of inactivity** (no browser requests). Short-press GPIO0 to reactivate it.
