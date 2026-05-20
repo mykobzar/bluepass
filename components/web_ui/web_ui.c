@@ -548,7 +548,6 @@ static void ota_fetch_task(void *arg)
         .timeout_ms           = 20000,
         .buffer_size          = 4096,
         .buffer_size_tx       = 1024,
-        .follow_redirects     = true,
         .max_redirection_count = 5,
     };
     esp_http_client_handle_t client = esp_http_client_init(&cfg);
