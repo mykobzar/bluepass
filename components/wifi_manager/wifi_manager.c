@@ -27,6 +27,10 @@
 #define LED_SLOW_US  (500 * 1000)   // 500 ms per toggle → 1 Hz (jiggler active)
 #define LED_PULSE_US (150 * 1000)   // 150 ms one-shot pulse (substitution)
 
+// LED is active-LOW: cathode → GPIO, anode → 3.3 V
+#define LED_ON  0
+#define LED_OFF 1
+
 static EventGroupHandle_t s_wifi_events;
 static int s_retry_count;
 static wifi_mgr_state_t s_state = WIFI_MGR_STATE_DISCONNECTED;
@@ -57,7 +61,7 @@ static void led_apply(void)
     esp_timer_stop(s_led_timer);
 
     if (s_web_ui_active) {
-        gpio_set_level(LED_GPIO, 1);
+        gpio_set_level(LED_GPIO, LED_ON);
         s_led_on = true;
         return;
     }
@@ -72,7 +76,7 @@ static void led_apply(void)
         return;
     }
 
-    gpio_set_level(LED_GPIO, 0);
+    gpio_set_level(LED_GPIO, LED_OFF);
     s_led_on = false;
 }
 
@@ -81,12 +85,12 @@ static void led_blink_cb(void *arg)
     // Web UI solid-on takes priority — if a stale callback fires after esp_timer_stop(),
     // we must not let it toggle the LED off.
     if (s_web_ui_active) {
-        gpio_set_level(LED_GPIO, 1);
+        gpio_set_level(LED_GPIO, LED_ON);
         s_led_on = true;
         return;
     }
     s_led_on = !s_led_on;
-    gpio_set_level(LED_GPIO, s_led_on ? 1 : 0);
+    gpio_set_level(LED_GPIO, s_led_on ? LED_ON : LED_OFF);
 }
 
 static void led_pulse_end_cb(void *arg)
@@ -172,6 +176,8 @@ esp_err_t wifi_manager_init(void)
         esp_wifi_set_config(WIFI_IF_STA, &wifi_cfg);
         esp_wifi_start();
     }
+
+    led_apply();   // initialise LED to match the current WiFi state at boot
     return ESP_OK;
 }
 
@@ -239,7 +245,7 @@ void wifi_manager_led_on(void)
     s_web_ui_active = true;
     if (s_led_timer)   esp_timer_stop(s_led_timer);
     if (s_pulse_timer) esp_timer_stop(s_pulse_timer);
-    gpio_set_level(LED_GPIO, 1);
+    gpio_set_level(LED_GPIO, LED_ON);
     s_led_on = true;
 }
 
@@ -260,7 +266,7 @@ void wifi_manager_led_blink_once(void)
     if (s_web_ui_active) return;
     esp_timer_stop(s_led_timer);
     esp_timer_stop(s_pulse_timer);
-    gpio_set_level(LED_GPIO, 1);
+    gpio_set_level(LED_GPIO, LED_ON);
     s_led_on = true;
     esp_timer_start_once(s_pulse_timer, LED_PULSE_US);
 }
