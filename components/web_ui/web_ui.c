@@ -487,6 +487,16 @@ static esp_err_t handler_time_get(httpd_req_t *req)
     return ESP_OK;
 }
 
+// ── Logout ────────────────────────────────────────────────────────────────────
+// POST /api/logout — send response first, then stop the web server via a task
+
+static esp_err_t handler_logout(httpd_req_t *req)
+{
+    send_ok(req);
+    xTaskCreate(idle_stop_task, "logout", 2048, NULL, 4, NULL);
+    return ESP_OK;
+}
+
 // ── OTA ───────────────────────────────────────────────────────────────────────
 // POST /api/ota          — upload .bin directly from browser
 // POST /api/ota/fetch    — {"url":"https://..."} device downloads from GitHub
@@ -747,6 +757,7 @@ esp_err_t web_ui_start(void)
         { .uri = "/api/ota/status", .method = HTTP_GET,    .handler = handler_ota_status },
         { .uri = "/api/time",      .method = HTTP_GET,    .handler = handler_time_get },
         { .uri = "/api/version",   .method = HTTP_GET,    .handler = handler_version_get },
+        { .uri = "/api/logout",    .method = HTTP_POST,   .handler = handler_logout },
     };
     for (size_t i = 0; i < sizeof(routes) / sizeof(routes[0]); i++) {
         httpd_register_uri_handler(s_server, &routes[i]);

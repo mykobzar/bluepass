@@ -97,10 +97,25 @@
     font-size: 0.78rem; color: var(--dim); letter-spacing: 0.04em;
     margin: -0.7rem 0 1rem; font-family: monospace;
   }
+  #header-row {
+    display: flex; align-items: baseline; justify-content: space-between;
+    margin-bottom: 0;
+  }
+  #logout-btn {
+    padding: 0.3rem 0.75rem; cursor: pointer; font-size: 0.85rem;
+    background: transparent; color: #888;
+    border: 1px solid #555; border-radius: 3px;
+    transition: border-color 0.15s, color 0.15s;
+    flex-shrink: 0;
+  }
+  #logout-btn:hover { border-color: #c55; color: #c55; }
 </style>
 </head>
 <body>
-<h2>bluepass</h2>
+<div id="header-row">
+  <h2>bluepass</h2>
+  <button id="logout-btn" onclick="logout()" style="display:none">Logout</button>
+</div>
 <div id="app-version"></div>
 
 <div id="setup-banner" style="display:none">
@@ -552,14 +567,27 @@ async function initPage() {
       show('wifi');
     } else {
       document.getElementById('main-nav').style.display = 'block';
+      document.getElementById('logout-btn').style.display = 'inline';
       show('log');
       loadJiggler();
       loadSlots();
     }
   } catch (_) {
     document.getElementById('main-nav').style.display = 'block';
+    document.getElementById('logout-btn').style.display = 'inline';
     show('log');
   }
+}
+
+async function logout() {
+  try { await fetch('/api/logout', { method: 'POST' }); } catch (_) {}
+  document.getElementById('main-nav').style.display = 'none';
+  document.getElementById('logout-btn').style.display = 'none';
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.getElementById('tab-log').innerHTML =
+    '<p style="color:var(--dim);margin-top:2rem;text-align:center">' +
+    'Web interface deactivated. Press the GPIO0 button to reactivate.</p>';
+  document.getElementById('tab-log').classList.add('active');
 }
 
 // ── WiFi ──────────────────────────────────────────────────────────────────────
