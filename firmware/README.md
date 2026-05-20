@@ -7,7 +7,7 @@ No toolchain installation required — only `esptool.py` (Python package).
 
 | Version | Date | Notes |
 |---|---|---|
-| **0.9.4** | 2026-05-20 | Logout button; fix LED race condition |
+| **0.9.4** | 2026-05-20 | Logout button; fix LED race condition; fix OTA (rollback state + upload stack overflow) |
 | 0.9.3 | 2026-05-20 | LED rework; web UI auto-off (5 min idle); fix USB HID character skip |
 | 0.9.2 | 2025-05-20 | Initial release |
 
