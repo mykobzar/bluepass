@@ -537,6 +537,7 @@ static esp_err_t handler_ota_upload(httpd_req_t *req)
         httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "no OTA partition");
         return ESP_FAIL;
     }
+    esp_ota_mark_app_valid_cancel_rollback();
     esp_ota_handle_t hdl;
     if (esp_ota_begin(part, OTA_WITH_SEQUENTIAL_WRITES, &hdl) != ESP_OK) {
         httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "ota_begin failed");
@@ -622,6 +623,7 @@ static void ota_fetch_task(void *arg)
         goto done;
     }
 
+    esp_ota_mark_app_valid_cancel_rollback();
     esp_ota_handle_t hdl;
     err = esp_ota_begin(part, OTA_WITH_SEQUENTIAL_WRITES, &hdl);
     if (err != ESP_OK) {
