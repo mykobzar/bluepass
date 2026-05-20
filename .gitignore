@@ -1,0 +1,37 @@
+# ── ESP-IDF build output ─────────────────────────────────────────────────────
+build/
+
+# ── Generated config (regenerated from sdkconfig.defaults by idf.py build) ──
+sdkconfig
+
+# ── Managed components (downloaded by idf-component-manager, like node_modules)
+managed_components/
+
+# ── Compiled artefacts (but not the pre-built firmware release folder) ───────
+*.elf
+*.map
+# .bin files everywhere except firmware/
+*.bin
+!firmware/*.bin
+!firmware/**/*.bin
+
+# ── Claude Code internal config ───────────────────────────────────────────────
+.claude/
+CLAUDE.md
+
+# ── IDE / editor ──────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*~
+
+# ── OS ────────────────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+
+# ── Internal project notes (not for public distribution) ─────────────────────
+brief.md
+
+# ── Python cache ──────────────────────────────────────────────────────────────
+__pycache__/
+*.pyc
