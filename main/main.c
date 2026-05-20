@@ -14,6 +14,7 @@
 #include "wifi_manager.h"
 #include "web_ui.h"
 #include "jiggler.h"
+#include "esp_ota_ops.h"
 
 static void on_jiggler_state(bool enabled)
 {
@@ -154,4 +155,8 @@ void app_main(void)
     // TinyUSB last: it switches the USB PHY mux from JTAG/Serial to OTG,
     // killing the serial monitor. All critical inits must complete first.
     ESP_ERROR_CHECK(usb_hid_device_init());
+
+    // Confirm this boot was successful so the bootloader doesn't roll back,
+    // and so future esp_ota_begin() calls are not blocked.
+    esp_ota_mark_app_valid_cancel_rollback();
 }
