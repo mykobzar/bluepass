@@ -56,18 +56,18 @@ Then flash (replace the port with yours):
 # Linux / macOS
 esptool.py --chip esp32s3 --port /dev/ttyUSB0 --baud 460800 write_flash \
   --flash_mode dio --flash_freq 80m --flash_size 4MB \
-  0x0     firmware/bootloader-0.9.1.bin \
-  0x8000  firmware/partition-table-0.9.1.bin \
-  0x10000 firmware/ota_data_initial-0.9.1.bin \
-  0x20000 firmware/bluepass-0.9.1.bin
+  0x0     firmware/bootloader-0.9.2.bin \
+  0x8000  firmware/partition-table-0.9.2.bin \
+  0x10000 firmware/ota_data_initial-0.9.2.bin \
+  0x20000 firmware/bluepass-0.9.2.bin
 
 # Windows — use COM3, COM4, etc.
 esptool.py --chip esp32s3 --port COM3 --baud 460800 write_flash ^
   --flash_mode dio --flash_freq 80m --flash_size 4MB ^
-  0x0     firmware\bootloader-0.9.1.bin ^
-  0x8000  firmware\partition-table-0.9.1.bin ^
-  0x10000 firmware\ota_data_initial-0.9.1.bin ^
-  0x20000 firmware\bluepass-0.9.1.bin
+  0x0     firmware\bootloader-0.9.2.bin ^
+  0x8000  firmware\partition-table-0.9.2.bin ^
+  0x10000 firmware\ota_data_initial-0.9.2.bin ^
+  0x20000 firmware\bluepass-0.9.2.bin
 ```
 
 > **Windows GUI option:** see [`firmware/README.md`](firmware/README.md) for step-by-step instructions using the Espressif Flash Download Tool (no Python required).
