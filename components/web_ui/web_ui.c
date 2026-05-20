@@ -14,10 +14,13 @@
 #include "esp_app_desc.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "nvs_flash.h"
 #include "cJSON.h"
 #include <string.h>
 #include <stdio.h>
 #include <time.h>
+
+typedef struct { char *url; bool erase_nvs; } ota_fetch_arg_t;
 
 #define TAG "web_ui"
 #define WS_MAX_CLIENTS  5
@@ -484,6 +487,12 @@ static esp_err_t handler_ota_upload(httpd_req_t *req)
         httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "OTA already running");
         return ESP_FAIL;
     }
+    char qs[32] = {0};
+    char val[8] = {0};
+    bool erase_nvs = false;
+    if (httpd_req_get_url_query_str(req, qs, sizeof(qs)) == ESP_OK)
+        if (httpd_query_key_value(qs, "erase_nvs", val, sizeof(val)) == ESP_OK)
+            erase_nvs = (val[0] == '1');
     const esp_partition_t *part = esp_ota_get_next_update_partition(NULL);
     if (!part) {
         httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "no OTA partition");
@@ -520,6 +529,7 @@ static esp_err_t handler_ota_upload(httpd_req_t *req)
     }
     s_ota_pct   = 100;
     s_ota_state = OTA_STATE_DONE;
+    if (erase_nvs) nvs_flash_erase();
     snprintf(s_ota_msg, sizeof(s_ota_msg), "Done. Rebooting...");
     send_ok(req);
     vTaskDelay(pdMS_TO_TICKS(600));
@@ -530,7 +540,10 @@ static esp_err_t handler_ota_upload(httpd_req_t *req)
 // Async task: download firmware from URL and flash it
 static void ota_fetch_task(void *arg)
 {
-    char *url = (char *)arg;
+    ota_fetch_arg_t *a   = (ota_fetch_arg_t *)arg;
+    char            *url = a->url;
+    bool         erase   = a->erase_nvs;
+    free(a);
     s_ota_state = OTA_STATE_RUNNING;
     s_ota_pct   = 0;
     snprintf(s_ota_msg, sizeof(s_ota_msg), "Connecting...");
@@ -610,6 +623,7 @@ static void ota_fetch_task(void *arg)
         goto done;
     }
     s_ota_pct   = 100;
+    if (erase) nvs_flash_erase();
     snprintf(s_ota_msg, sizeof(s_ota_msg), "Done. Rebooting...");
     s_ota_state = OTA_STATE_DONE;
     vTaskDelay(pdMS_TO_TICKS(1500));
@@ -636,19 +650,23 @@ static esp_err_t handler_ota_fetch(httpd_req_t *req)
     if (n <= 0) { httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "empty"); return ESP_FAIL; }
     body[n] = '\0';
 
-    cJSON *json  = cJSON_Parse(body);
-    cJSON *url_j = json ? cJSON_GetObjectItem(json, "url") : NULL;
+    cJSON *json     = cJSON_Parse(body);
+    cJSON *url_j    = json ? cJSON_GetObjectItem(json, "url") : NULL;
+    cJSON *erase_j  = json ? cJSON_GetObjectItem(json, "erase_nvs") : NULL;
     if (!url_j || !cJSON_IsString(url_j) || url_j->valuestring[0] == '\0') {
         cJSON_Delete(json);
         httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "url required");
         return ESP_FAIL;
     }
-    char *url = strdup(url_j->valuestring);
+    ota_fetch_arg_t *a = malloc(sizeof(ota_fetch_arg_t));
+    if (!a) { cJSON_Delete(json); httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "no mem"); return ESP_FAIL; }
+    a->url       = strdup(url_j->valuestring);
+    a->erase_nvs = erase_j && cJSON_IsTrue(erase_j);
     cJSON_Delete(json);
-    if (!url) { httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "no mem"); return ESP_FAIL; }
+    if (!a->url) { free(a); httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "no mem"); return ESP_FAIL; }
 
-    if (xTaskCreate(ota_fetch_task, "ota_fetch", 8192, url, 5, NULL) != pdPASS) {
-        free(url);
+    if (xTaskCreate(ota_fetch_task, "ota_fetch", 8192, a, 5, NULL) != pdPASS) {
+        free(a->url); free(a);
         httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "task failed");
         return ESP_FAIL;
     }
