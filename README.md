@@ -268,6 +268,26 @@ Periodically sends a harmless key (`F15` by default) to prevent the laptop from 
 The enabled/disabled state and all settings are persisted in NVS and restored after reboot.  
 If enable/disable hotkeys are configured the jiggler can be controlled directly from the Bluetooth keyboard without opening the web interface.
 
+### OTA firmware update
+
+The **Firmware** tab lets you update the firmware without a USB cable.
+
+**Update from GitHub (recommended)**
+
+1. Open the **Firmware** tab → click **Check for update**.
+2. The device queries the GitHub repository for the latest git tag and compares it with the installed version.
+3. If a newer version is available, click **Update from GitHub** — the device downloads and flashes it automatically over WiFi, then reboots.
+
+The device must be connected to WiFi for this to work.
+
+**Manual upload**
+
+Expand **Manual upload** and select a `.bin` file from your computer. The file is streamed directly from the browser to the device flash.
+
+**Erase settings option**
+
+Before updating, you can check **Erase all settings after update** to wipe the NVS partition on reboot. This removes WiFi credentials, hotkeys, passwords, TOTP secrets, and the paired keyboard — the device starts from factory defaults after flashing.
+
 ---
 
 ## Hotkey syntax
