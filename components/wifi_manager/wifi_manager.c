@@ -78,6 +78,13 @@ static void led_apply(void)
 
 static void led_blink_cb(void *arg)
 {
+    // Web UI solid-on takes priority — if a stale callback fires after esp_timer_stop(),
+    // we must not let it toggle the LED off.
+    if (s_web_ui_active) {
+        gpio_set_level(LED_GPIO, 1);
+        s_led_on = true;
+        return;
+    }
     s_led_on = !s_led_on;
     gpio_set_level(LED_GPIO, s_led_on ? 1 : 0);
 }
@@ -230,8 +237,10 @@ void wifi_manager_set_state_cb(wifi_mgr_state_cb_t cb, void *ctx)
 void wifi_manager_led_on(void)
 {
     s_web_ui_active = true;
-    esp_timer_stop(s_pulse_timer);
-    led_apply();
+    if (s_led_timer)   esp_timer_stop(s_led_timer);
+    if (s_pulse_timer) esp_timer_stop(s_pulse_timer);
+    gpio_set_level(LED_GPIO, 1);
+    s_led_on = true;
 }
 
 void wifi_manager_led_off(void)
