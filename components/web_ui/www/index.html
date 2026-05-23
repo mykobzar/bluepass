@@ -1190,7 +1190,6 @@ function useImportedTotp(label, secret) {
 }
 
 // ── OTA ───────────────────────────────────────────────────────────────────────
-const GITHUB_REPO = 'mykobzar/bluepass';
 let s_otaLatestUrl = '';
 let s_otaPolling   = null;
 
@@ -1232,23 +1231,22 @@ async function otaCheckGithub() {
   const updBtn = document.getElementById('ota-update-btn');
   const latBlk = document.getElementById('ota-latest-block');
   btn.disabled = true;
-  ghSt.textContent = 'Checking GitHub…';
+  ghSt.textContent = 'Checking…';
+  ghSt.style.color = 'var(--dim)';
   updBtn.style.display = 'none';
   s_otaLatestUrl = '';
   try {
-    const r = await fetch('https://api.github.com/repos/' + GITHUB_REPO + '/tags');
-    if (!r.ok) throw new Error('GitHub API returned ' + r.status);
-    const tags = await r.json();
-    if (!Array.isArray(tags) || !tags.length) throw new Error('No tags found in repository');
+    const r = await fetch('/api/ota/check');
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const d = await r.json();
+    if (d.error) throw new Error(d.error);
 
-    const tag = tags[0].name;                     // e.g. "v0.9.2"
-    const ver = tag.replace(/^v/, '');            // "0.9.2"
-    const binName = 'bluepass-' + ver + '.bin';
-    const rawBase = 'https://raw.githubusercontent.com/' + GITHUB_REPO + '/' + tag + '/firmware/';
+    const tag = d.latest;                   // e.g. "v0.9.10"
+    const ver = tag.replace(/^v/, '');      // "0.9.10"
+    s_otaLatestUrl = d.url;
 
     document.getElementById('ota-latest-ver').textContent = tag;
     latBlk.style.display = 'block';
-    s_otaLatestUrl = rawBase + binName;
 
     const curRaw = document.getElementById('ota-cur-ver').textContent.replace(/^v/,'');
     if (versionGt(ver, curRaw)) {

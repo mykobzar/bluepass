@@ -732,6 +732,92 @@ done:
     vTaskDelete(NULL);
 }
 
+// GET /api/ota/check — device queries GitHub tags and returns {latest, url} or {error}
+static esp_err_t handler_ota_check(httpd_req_t *req)
+{
+    if (!wifi_manager_is_connected()) {
+        httpd_resp_set_type(req, "application/json");
+        httpd_resp_sendstr(req, "{\"error\":\"WiFi not connected\"}");
+        return ESP_OK;
+    }
+
+    esp_http_client_config_t cfg = {
+        .url                   = "https://api.github.com/repos/mykobzar/bluepass/tags?per_page=1",
+        .crt_bundle_attach     = esp_crt_bundle_attach,
+        .timeout_ms            = 15000,
+        .buffer_size           = 2048,
+        .buffer_size_tx        = 512,
+        .max_redirection_count = 3,
+    };
+    esp_http_client_handle_t client = esp_http_client_init(&cfg);
+    esp_http_client_set_header(client, "User-Agent", "bluepass-firmware");
+
+    httpd_resp_set_type(req, "application/json");
+
+    if (esp_http_client_open(client, 0) != ESP_OK) {
+        esp_http_client_cleanup(client);
+        httpd_resp_sendstr(req, "{\"error\":\"connect failed\"}");
+        return ESP_OK;
+    }
+
+    esp_http_client_fetch_headers(client);
+    int status = esp_http_client_get_status_code(client);
+
+    char *body  = malloc(2048);
+    int   total = 0;
+    if (status == 200 && body) {
+        int n;
+        while (total < 2047 &&
+               (n = esp_http_client_read(client, body + total, 2047 - total)) > 0)
+            total += n;
+        if (total > 0) body[total] = '\0';
+    }
+    esp_http_client_close(client);
+    esp_http_client_cleanup(client);
+
+    if (status != 200 || !body || total <= 0) {
+        free(body);
+        httpd_resp_sendstr(req, "{\"error\":\"GitHub API error\"}");
+        return ESP_OK;
+    }
+
+    cJSON *arr   = cJSON_Parse(body);
+    free(body);
+
+    if (!arr || !cJSON_IsArray(arr) || cJSON_GetArraySize(arr) == 0) {
+        cJSON_Delete(arr);
+        httpd_resp_sendstr(req, "{\"error\":\"no tags found\"}");
+        return ESP_OK;
+    }
+
+    cJSON *tag_obj = cJSON_GetArrayItem(arr, 0);
+    cJSON *name    = cJSON_GetObjectItem(tag_obj, "name");
+
+    if (!name || !cJSON_IsString(name)) {
+        cJSON_Delete(arr);
+        httpd_resp_sendstr(req, "{\"error\":\"tag parse failed\"}");
+        return ESP_OK;
+    }
+
+    const char *tag = name->valuestring;
+    const char *ver = (tag[0] == 'v') ? tag + 1 : tag;
+    char url[192];
+    snprintf(url, sizeof(url),
+        "https://raw.githubusercontent.com/mykobzar/bluepass/%s/firmware/bluepass-%s.bin",
+        tag, ver);
+
+    cJSON *resp = cJSON_CreateObject();
+    cJSON_AddStringToObject(resp, "latest", tag);
+    cJSON_AddStringToObject(resp, "url",    url);
+    cJSON_Delete(arr);
+
+    char *js = cJSON_PrintUnformatted(resp);
+    cJSON_Delete(resp);
+    httpd_resp_sendstr(req, js);
+    free(js);
+    return ESP_OK;
+}
+
 // Device fetches from URL in background
 static esp_err_t handler_ota_fetch(httpd_req_t *req)
 {
@@ -815,6 +901,7 @@ esp_err_t web_ui_start(void)
         { .uri = "/api/ble/disconnect", .method = HTTP_POST, .handler = handler_ble_disconnect },
         { .uri = "/api/ble/log",        .method = HTTP_GET,  .handler = handler_ble_log },
         { .uri = "/api/ota",        .method = HTTP_POST,   .handler = handler_ota_upload },
+        { .uri = "/api/ota/check",  .method = HTTP_GET,    .handler = handler_ota_check },
         { .uri = "/api/ota/fetch",  .method = HTTP_POST,   .handler = handler_ota_fetch },
         { .uri = "/api/ota/status", .method = HTTP_GET,    .handler = handler_ota_status },
         { .uri = "/api/time",              .method = HTTP_GET,  .handler = handler_time_get },
