@@ -141,7 +141,7 @@
 </div>
 
 <nav id="main-nav" style="display:none">
-  <button onclick="show('log')">Log</button>
+  <button onclick="show('log')">Info</button>
   <button onclick="show('text')">Text</button>
   <button onclick="show('passwords')">Passwords</button>
   <button onclick="show('totp')">TOTP</button>
@@ -156,9 +156,19 @@
   <button onclick="show('security')">Security</button>
 </nav>
 
-<!-- Key Log -->
+<!-- Info -->
 <div id="tab-log" class="tab">
-  <h3>Key Log</h3>
+  <h3>Info</h3>
+  <div id="info-cards" style="display:flex;gap:0.8rem;flex-wrap:wrap;margin-bottom:1rem">
+    <div id="info-wifi" style="flex:1;min-width:160px;border:1px solid #444;border-radius:6px;padding:0.6rem 0.9rem">
+      <strong>WiFi</strong>
+      <div id="info-wifi-body" style="margin-top:0.3rem;font-size:0.9rem;color:#aaa">Loading…</div>
+    </div>
+    <div id="info-ble" style="flex:1;min-width:160px;border:1px solid #444;border-radius:6px;padding:0.6rem 0.9rem">
+      <strong>Bluetooth</strong>
+      <div id="info-ble-body" style="margin-top:0.3rem;font-size:0.9rem;color:#aaa">Loading…</div>
+    </div>
+  </div>
   <div id="log"></div>
   <button onclick="clearLog()" style="margin-top:0.4rem">Clear</button>
 </div>
@@ -671,6 +681,7 @@ function show(name) {
   const mainNavVisible = document.getElementById('main-nav').style.display !== 'none';
   document.getElementById('settings-nav').style.display =
     (mainNavVisible && ['wifi','ota','security'].includes(name)) ? 'block' : 'none';
+  if (name === 'log')      { loadInfoCards(); }
   if (name === 'ble')      { loadBleStatus(); loadBleLog(); }
   if (name === 'list')     { renderList(); }
   if (name === 'security') { loadSecurity(); }
@@ -780,6 +791,41 @@ ws.onmessage = e => {
   log.scrollTop = log.scrollHeight;
 };
 function clearLog() { document.getElementById('log').textContent = ''; }
+
+function rssiColor(rssi) {
+  if (rssi >= -60) return '#4caf50';
+  if (rssi >= -75) return '#ff9800';
+  return '#f44336';
+}
+
+async function loadInfoCards() {
+  try {
+    const r = await fetch('/api/wifi');
+    const d = await r.json();
+    const el = document.getElementById('info-wifi-body');
+    if (d.connected) {
+      const color = rssiColor(d.rssi);
+      el.innerHTML = `<span style="color:#4caf50">&#9679; Connected</span><br>${d.ssid}<br>` +
+        (d.rssi !== undefined ? `Signal: <span style="color:${color}">${d.rssi} dBm</span>` : '');
+    } else {
+      el.innerHTML = '<span style="color:#f44336">&#9679; Not connected</span>';
+    }
+  } catch(_) { document.getElementById('info-wifi-body').textContent = 'Error'; }
+
+  try {
+    const r = await fetch('/api/ble/status');
+    const d = await r.json();
+    const el = document.getElementById('info-ble-body');
+    if (d.connected) {
+      const color = rssiColor(d.rssi);
+      el.innerHTML = `<span style="color:#4caf50">&#9679; Connected</span><br>${d.name || d.addr}<br>` +
+        (d.rssi !== undefined ? `Signal: <span style="color:${color}">${d.rssi} dBm</span>` : '');
+    } else {
+      el.innerHTML = '<span style="color:#aaa">&#9679; Not connected</span>' +
+        (d.name ? `<br>Last: ${d.name}` : '');
+    }
+  } catch(_) { document.getElementById('info-ble-body').textContent = 'Error'; }
+}
 
 // ── Bluetooth ─────────────────────────────────────────────────────────────────
 async function loadBleStatus() {

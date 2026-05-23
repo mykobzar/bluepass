@@ -10,6 +10,7 @@
 #include "esp_http_server.h"
 #include "esp_http_client.h"
 #include "esp_crt_bundle.h"
+#include "esp_wifi.h"
 #include "esp_ota_ops.h"
 #include "esp_system.h"
 #include "esp_app_desc.h"
@@ -315,6 +316,11 @@ static esp_err_t handler_wifi_get(httpd_req_t *req)
     cJSON_AddBoolToObject(obj,   "configured", configured);
     cJSON_AddBoolToObject(obj,   "connected",  wifi_manager_is_connected());
     cJSON_AddStringToObject(obj, "ssid",       creds.ssid);
+    if (wifi_manager_is_connected()) {
+        wifi_ap_record_t ap;
+        if (esp_wifi_sta_get_ap_info(&ap) == ESP_OK)
+            cJSON_AddNumberToObject(obj, "rssi", ap.rssi);
+    }
     send_json(req, obj);
     cJSON_Delete(obj);
     return ESP_OK;
@@ -448,9 +454,12 @@ static esp_err_t handler_ble_status(httpd_req_t *req)
     ble_hid_host_get_peer_addr(peer_addr, sizeof(peer_addr));
 
     cJSON *obj = cJSON_CreateObject();
-    cJSON_AddBoolToObject(obj,   "connected", ble_hid_host_is_connected());
+    bool connected = ble_hid_host_is_connected();
+    cJSON_AddBoolToObject(obj,   "connected", connected);
     cJSON_AddStringToObject(obj, "name",      name);
     cJSON_AddStringToObject(obj, "addr",      peer_addr);
+    if (connected)
+        cJSON_AddNumberToObject(obj, "rssi", ble_hid_host_get_rssi());
     send_json(req, obj);
     cJSON_Delete(obj);
     return ESP_OK;

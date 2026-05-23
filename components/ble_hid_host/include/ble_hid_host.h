@@ -30,10 +30,11 @@ esp_err_t ble_hid_host_stop_scan(void);
 esp_err_t ble_hid_host_connect(const uint8_t addr[6], uint8_t addr_type);
 esp_err_t ble_hid_host_disconnect(void);
 
-bool ble_hid_host_is_connected(void);
-void ble_hid_host_get_peer_name(char *buf, size_t len);
-void ble_hid_host_set_peer_name(const char *name);
-void ble_hid_host_get_peer_addr(char *buf, size_t len);
+bool  ble_hid_host_is_connected(void);
+int8_t ble_hid_host_get_rssi(void);
+void  ble_hid_host_get_peer_name(char *buf, size_t len);
+void  ble_hid_host_set_peer_name(const char *name);
+void  ble_hid_host_get_peer_addr(char *buf, size_t len);
 
 void ble_hid_host_set_connection_cb(ble_connection_cb_t cb, void *ctx);
 

@@ -746,6 +746,15 @@ void ble_hid_host_get_peer_addr(char *buf, size_t len)
              a[0], a[1], a[2], a[3], a[4], a[5]);
 }
 
+int8_t ble_hid_host_get_rssi(void)
+{
+    if (!s_ctx.connected || s_ctx.conn_handle == BLE_HS_CONN_HANDLE_NONE)
+        return 0;
+    int8_t rssi = 0;
+    ble_gap_conn_rssi(s_ctx.conn_handle, &rssi);
+    return rssi;
+}
+
 void ble_hid_host_set_connection_cb(ble_connection_cb_t cb, void *ctx)
 {
     s_ctx.conn_cb  = cb;
