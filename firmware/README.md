@@ -7,7 +7,8 @@ No toolchain installation required — only `esptool.py` (Python package).
 
 | Version | Date | Notes |
 |---|---|---|
-| **0.9.9** | 2026-05-23 | Match/replace modes per slot; Edit slots; secure deletion; flash encryption; Settings sub-menu |
+| **0.9.10** | 2026-05-23 | Fix OTA rollback: disable abort-on-no-encryption check that blocked OTA on unencrypted devices |
+| 0.9.9 | 2026-05-23 | Match/replace modes per slot; Edit slots; secure deletion; flash encryption; Settings sub-menu |
 | 0.9.8 | 2026-05-20 | Docs: update CLAUDE.md and README for WS2812 RGB LED |
 | 0.9.7 | 2026-05-20 | RGB WS2812 LED on GPIO48: blue=web UI, red blink=no WiFi, green blink=jiggler |
 | 0.9.6 | 2026-05-20 | Fix LED GPIO pin: use GPIO21 (correct pin for ESP32-S3 SuperMini) |
@@ -18,14 +19,14 @@ No toolchain installation required — only `esptool.py` (Python package).
 
 ---
 
-## Files — v0.9.9
+## Files — v0.9.10
 
 | File | Flash address | Description |
 |---|---|---|
-| `bootloader-0.9.9.bin` | `0x0` | Second-stage bootloader |
-| `partition-table-0.9.9.bin` | `0x8000` | Partition layout (NVS + dual OTA slots) |
-| `ota_data_initial-0.9.9.bin` | `0x10000` | OTA slot selector (initial state) |
-| `bluepass-0.9.9.bin` | `0x20000` | Main application |
+| `bootloader-0.9.10.bin` | `0x0` | Second-stage bootloader |
+| `partition-table-0.9.10.bin` | `0x8000` | Partition layout (NVS + dual OTA slots) |
+| `ota_data_initial-0.9.10.bin` | `0x10000` | OTA slot selector (initial state) |
+| `bluepass-0.9.10.bin` | `0x20000` | Main application |
 
 All four files must be flashed together on a **blank or previously erased** device.
 
@@ -91,10 +92,10 @@ esptool.py \
   --flash_mode dio \
   --flash_freq 80m \
   --flash_size 4MB \
-  0x0     bootloader-0.9.9.bin \
-  0x8000  partition-table-0.9.9.bin \
-  0x10000 ota_data_initial-0.9.9.bin \
-  0x20000 bluepass-0.9.9.bin
+  0x0     bootloader-0.9.10.bin \
+  0x8000  partition-table-0.9.10.bin \
+  0x10000 ota_data_initial-0.9.10.bin \
+  0x20000 bluepass-0.9.10.bin
 ```
 
 Expected output:
@@ -128,10 +129,10 @@ esptool.py ^
   --flash_mode dio ^
   --flash_freq 80m ^
   --flash_size 4MB ^
-  0x0     bootloader-0.9.9.bin ^
-  0x8000  partition-table-0.9.9.bin ^
-  0x10000 ota_data_initial-0.9.9.bin ^
-  0x20000 bluepass-0.9.9.bin
+  0x0     bootloader-0.9.10.bin ^
+  0x8000  partition-table-0.9.10.bin ^
+  0x10000 ota_data_initial-0.9.10.bin ^
+  0x20000 bluepass-0.9.10.bin
 ```
 
 Replace `COM3` with your actual port number.
@@ -147,10 +148,10 @@ Replace `COM3` with your actual port number.
 
    | File | Address |
    |---|---|
-   | `bootloader-0.9.9.bin` | `0x0` |
-   | `partition-table-0.9.9.bin` | `0x8000` |
-   | `ota_data_initial-0.9.9.bin` | `0x10000` |
-   | `bluepass-0.9.9.bin` | `0x20000` |
+   | `bootloader-0.9.10.bin` | `0x0` |
+   | `partition-table-0.9.10.bin` | `0x8000` |
+   | `ota_data_initial-0.9.10.bin` | `0x10000` |
+   | `bluepass-0.9.10.bin` | `0x20000` |
 
 5. Set **COM** to your port, **BAUD** to `460800`.
 6. Set **SPI SPEED: 80 MHz**, **SPI MODE: DIO**, **FLASH SIZE: 4MB**.
