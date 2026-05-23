@@ -23,26 +23,27 @@
 #define MAX_RETRY          5
 
 // ── LED blink periods ─────────────────────────────────────────────────────────
-#define LED_FAST_US  (100 * 1000)   // 100 ms per toggle → 5 Hz  (WiFi error)
-#define LED_SLOW_US  (500 * 1000)   // 500 ms per toggle → 1 Hz  (jiggler)
-#define LED_PULSE_US (150 * 1000)   // 150 ms one-shot pulse      (substitution)
+#define LED_FAST_US    (100 * 1000)   // 100 ms per toggle → 5 Hz   (WiFi error)
+#define LED_JIG_ON_US  (200 * 1000)   // 200 ms flash                (jiggler on-phase)
+#define LED_JIG_OFF_US (2800 * 1000)  // 2.8 s dark                  (jiggler off-phase, 3 s cycle)
+#define LED_PULSE_US   (150 * 1000)   // 150 ms one-shot pulse        (substitution)
 
-// RGB colours (0-255, moderate brightness to avoid eye strain)
-#define RED_R   35
+// RGB colours — 1/4 brightness
+#define RED_R    9
 #define RED_G    0
 #define RED_B    0
 
 #define GREEN_R  0
-#define GREEN_G 35
+#define GREEN_G  9
 #define GREEN_B  0
 
 #define BLUE_R   0
 #define BLUE_G   0
-#define BLUE_B  35
+#define BLUE_B   9
 
-#define WHITE_R 20
-#define WHITE_G 20
-#define WHITE_B 20
+#define WHITE_R  5
+#define WHITE_G  5
+#define WHITE_B  5
 
 static EventGroupHandle_t s_wifi_events;
 static int s_retry_count;
@@ -97,13 +98,17 @@ static void led_apply(void)
 
     if (s_state != WIFI_MGR_STATE_CONNECTED) {
         s_blink_r = RED_R; s_blink_g = RED_G; s_blink_b = RED_B;
-        esp_timer_start_periodic(s_led_timer, LED_FAST_US);
+        s_led_on = false;
+        led_set(0, 0, 0);
+        esp_timer_start_once(s_led_timer, LED_FAST_US);
         return;
     }
 
     if (s_jiggler_active) {
         s_blink_r = GREEN_R; s_blink_g = GREEN_G; s_blink_b = GREEN_B;
-        esp_timer_start_periodic(s_led_timer, LED_SLOW_US);
+        s_led_on = false;
+        led_set(0, 0, 0);
+        esp_timer_start_once(s_led_timer, LED_JIG_OFF_US);
         return;
     }
 
@@ -123,6 +128,13 @@ static void led_blink_cb(void *arg)
     led_set(s_led_on ? s_blink_r : 0,
             s_led_on ? s_blink_g : 0,
             s_led_on ? s_blink_b : 0);
+
+    // Restart one-shot for next toggle (periodic timer replaced by self-rescheduling one-shot)
+    if (s_jiggler_active && s_state == WIFI_MGR_STATE_CONNECTED) {
+        esp_timer_start_once(s_led_timer, s_led_on ? LED_JIG_ON_US : LED_JIG_OFF_US);
+    } else if (s_state != WIFI_MGR_STATE_CONNECTED) {
+        esp_timer_start_once(s_led_timer, LED_FAST_US);
+    }
 }
 
 static void led_pulse_end_cb(void *arg)

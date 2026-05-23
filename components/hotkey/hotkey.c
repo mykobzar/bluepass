@@ -26,7 +26,10 @@ static uint8_t s_jig_off_mod, s_jig_off_kc;
 
 // Queue for async string typing (avoids blocking the BLE callback)
 static QueueHandle_t s_type_queue;
-typedef struct { char text[HOTKEY_PAYLOAD_MAX + 8]; } type_job_t;
+typedef struct {
+    char    text[HOTKEY_PAYLOAD_MAX + 8];
+    uint8_t restore_mods;  // if non-zero, re-send this modifier state after typing
+} type_job_t;
 
 static void typing_task(void *arg)
 {
@@ -36,6 +39,14 @@ static void typing_task(void *arg)
             usb_hid_device_send_release(); // clear any held keys first
             vTaskDelay(pdMS_TO_TICKS(20));
             usb_hid_device_type_string(job.text);
+            if (job.restore_mods) {
+                hid_keyboard_report_t mod_report = {
+                    .modifier = job.restore_mods,
+                    .reserved = 0,
+                    .keycode  = {0},
+                };
+                usb_hid_device_send_report(&mod_report);
+            }
         }
     }
 }
@@ -88,7 +99,9 @@ static bool report_matches(const bluepass_hid_report_t *report,
     if (s->consumer_code != 0) {
         return report->consumer_code == s->consumer_code;
     }
-    if (report->keyboard.modifier != s->modifiers) return false;
+    // match_mode 0 (default): exact keycode + modifiers
+    // match_mode 1: keycode only — fire regardless of which modifiers are held
+    if (s->match_mode == 0 && report->keyboard.modifier != s->modifiers) return false;
     for (int i = 0; i < 6; i++) {
         if (report->keyboard.keycode[i] == s->keycode) return true;
     }
@@ -119,20 +132,25 @@ static void fire_substitution(const bluepass_hid_report_t *report,
                                const hotkey_slot_t *s, int slot_idx)
 {
     bool failed = false;
+    // replace_mode 0 (default): replace all — consume combo, type payload only
+    // replace_mode 1: keep modifiers — re-send held modifier keys after typing
+    uint8_t restore_mods = (s->replace_mode == 1) ? report->keyboard.modifier : 0;
+
     switch (s->type) {
     case SLOT_TYPE_PASSWORD:
     case SLOT_TYPE_TEXT: {
-        type_job_t job;
+        type_job_t job = {0};
         strncpy(job.text, s->payload, sizeof(job.text) - 1);
-        job.text[sizeof(job.text) - 1] = '\0';
+        job.restore_mods = restore_mods;
         xQueueSend(s_type_queue, &job, 0);
         break;
     }
     case SLOT_TYPE_TOTP: {
         uint32_t code;
         if (totp_generate(s->payload, &code) == ESP_OK) {
-            type_job_t job;
+            type_job_t job = {0};
             snprintf(job.text, sizeof(job.text), "%06" PRIu32, code);
+            job.restore_mods = restore_mods;
             xQueueSend(s_type_queue, &job, 0);
         } else {
             ESP_LOGW(TAG, "TOTP slot %d failed — clock synced?", slot_idx);
@@ -158,10 +176,15 @@ void hotkey_engine_process(const bluepass_hid_report_t *report)
 
     // Jiggler on/off hotkeys — checked before regular slots
     if (kb_combo_matches(report, s_jig_on_mod, s_jig_on_kc)) {
-        jiggler_enable();
+        // Toggle mode: off hotkey is empty — on hotkey acts as toggle
+        if (s_jig_off_kc == 0) {
+            jiggler_toggle();
+        } else {
+            jiggler_enable();
+        }
         jiggler_config_t jcfg = {0};
         if (storage_get_jiggler_config(&jcfg) == ESP_OK) {
-            jcfg.enabled = true;
+            jcfg.enabled = jiggler_is_enabled();
             storage_set_jiggler_config(&jcfg);
         }
         notify_event(report, true, false);

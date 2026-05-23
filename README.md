@@ -2,7 +2,7 @@
 
 > Bluetooth → USB HID bridge with password injection, TOTP codes and jiggler — firmware for ESP32-S3 SuperMini.
 
-![Version](https://img.shields.io/badge/version-0.9.8-blue)
+![Version](https://img.shields.io/badge/version-0.9.9-blue)
 ![ESP-IDF](https://img.shields.io/badge/ESP--IDF-v5.2%2B-blue)
 ![Target](https://img.shields.io/badge/target-ESP32--S3-informational)
 ![License](https://img.shields.io/badge/license-MIT-green)
@@ -57,18 +57,18 @@ Then flash (replace the port with yours):
 # Linux / macOS
 esptool.py --chip esp32s3 --port /dev/ttyUSB0 --baud 460800 write_flash \
   --flash_mode dio --flash_freq 80m --flash_size 4MB \
-  0x0     firmware/bootloader-0.9.8.bin \
-  0x8000  firmware/partition-table-0.9.8.bin \
-  0x10000 firmware/ota_data_initial-0.9.8.bin \
-  0x20000 firmware/bluepass-0.9.8.bin
+  0x0     firmware/bootloader-0.9.9.bin \
+  0x8000  firmware/partition-table-0.9.9.bin \
+  0x10000 firmware/ota_data_initial-0.9.9.bin \
+  0x20000 firmware/bluepass-0.9.9.bin
 
 # Windows — use COM3, COM4, etc.
 esptool.py --chip esp32s3 --port COM3 --baud 460800 write_flash ^
   --flash_mode dio --flash_freq 80m --flash_size 4MB ^
-  0x0     firmware\bootloader-0.9.5.bin ^
-  0x8000  firmware\partition-table-0.9.5.bin ^
-  0x10000 firmware\ota_data_initial-0.9.5.bin ^
-  0x20000 firmware\bluepass-0.9.5.bin
+  0x0     firmware\bootloader-0.9.9.bin ^
+  0x8000  firmware\partition-table-0.9.9.bin ^
+  0x10000 firmware\ota_data_initial-0.9.9.bin ^
+  0x20000 firmware\bluepass-0.9.9.bin
 ```
 
 > **Windows GUI option:** see [`firmware/README.md`](firmware/README.md) for step-by-step instructions using the Espressif Flash Download Tool (no Python required).
@@ -230,8 +230,9 @@ The web interface **turns off automatically after 5 minutes of inactivity** (no 
 | **Jiggler** | Jiggler interval, key code, enable/disable hotkeys |
 | **List** | Full HID keycode reference (keyboard + Consumer Control) |
 | **Bluetooth** | Scan, pair, disconnect; BLE diagnostic log |
-| **WiFi** | Change WiFi network (triggers reboot) |
-| **Firmware** | OTA firmware update |
+| **Settings → WiFi** | Change WiFi network (triggers reboot) |
+| **Settings → Firmware** | OTA firmware update |
+| **Settings → Security** | Flash encryption status; switch from Development to Release mode |
 
 ---
 
@@ -272,6 +273,53 @@ Periodically sends a harmless key (`F15` by default) to prevent the laptop from 
 
 The enabled/disabled state and all settings are persisted in NVS and restored after reboot.  
 If enable/disable hotkeys are configured the jiggler can be controlled directly from the Bluetooth keyboard without opening the web interface.
+
+**Toggle mode:** leave the Disable hotkey field empty and the same key acts as a toggle — one press enables, next press disables.
+
+### Match and replace modes
+
+Each hotkey slot has two independent mode selectors:
+
+**Match mode** — how the incoming key event is compared against the stored trigger:
+
+| Mode | Behaviour |
+|---|---|
+| Exact (default) | Keycode *and* modifier mask must both match |
+| Keycode only | Only the keycode is compared; any modifier state triggers the slot |
+
+**Replace mode** — how the outgoing substitution is sent:
+
+| Mode | Behaviour |
+|---|---|
+| Replace all (default) | Substitution is sent with no modifiers held |
+| Keep modifiers | Modifiers active at trigger time are preserved and re-sent after typing |
+
+These modes are set per slot in the Add / Edit form on the Text, Passwords, and TOTP tabs.
+
+### Editing existing slots
+
+All three substitution tabs (Text, Passwords, TOTP) have an **Edit** button next to each slot.  
+Clicking Edit copies the slot's settings into the form — label, hotkey, match/replace mode — ready to be modified and saved.
+
+Passwords and TOTP secrets are never shown in the UI. To change a secret, type a new value in the payload field while editing; leave it blank to keep the current value unchanged.
+
+### Secure deletion
+
+When a Password or TOTP slot is deleted, the stored payload is overwritten twice (first with `0x00`, then with `0xFF`) before the NVS key is erased. This ensures the secret does not persist in flash as a recoverable stale NVS page.
+
+### Flash encryption
+
+bluepass supports ESP32 hardware AES-XTS flash encryption. The **Settings → Security** tab shows the current encryption mode and explains the consequences of each state:
+
+| Mode | Flash content | UART flash | JTAG |
+|---|---|---|---|
+| Disabled | Plaintext | Allowed | Allowed |
+| Development | Encrypted | Allowed | Allowed |
+| Release | Encrypted | **Disabled permanently** | **Disabled permanently** |
+
+Firmware ships with encryption in **Development mode** — data is encrypted, but UART reflashing is still possible. Switching to Release mode is irreversible: it permanently burns eFuse bits that disable UART download and JTAG. Only OTA updates remain possible after that.
+
+> Verify that OTA firmware updates work correctly before switching to Release mode.
 
 ### OTA firmware update
 

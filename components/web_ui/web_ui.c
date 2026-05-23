@@ -1,4 +1,5 @@
 #include "web_ui.h"
+#include "esp_flash_encrypt.h"
 #include "storage.h"
 #include "jiggler.h"
 #include "hotkey.h"
@@ -155,6 +156,8 @@ static esp_err_t handler_slots_get(httpd_req_t *req)
         cJSON_AddNumberToObject(obj, "modifiers", slot.modifiers);
         cJSON_AddNumberToObject(obj, "keycode", slot.keycode);
         cJSON_AddNumberToObject(obj, "consumer_code", slot.consumer_code);
+        cJSON_AddNumberToObject(obj, "match_mode",   slot.match_mode);
+        cJSON_AddNumberToObject(obj, "replace_mode", slot.replace_mode);
         if (slot.type == SLOT_TYPE_TEXT) {
             cJSON_AddStringToObject(obj, "payload", slot.payload);
         } else {
@@ -199,8 +202,21 @@ static esp_err_t handler_slots_put(httpd_req_t *req)
     slot.keycode   = (uint8_t)cJSON_GetObjectItem(json, "keycode")->valueint;
     cJSON *cc_j = cJSON_GetObjectItem(json, "consumer_code");
     slot.consumer_code = cc_j ? (uint16_t)cc_j->valueint : 0;
-    strncpy(slot.label,   cJSON_GetObjectItem(json, "label")->valuestring,   sizeof(slot.label) - 1);
-    strncpy(slot.payload, cJSON_GetObjectItem(json, "payload")->valuestring, sizeof(slot.payload) - 1);
+    cJSON *mm_j = cJSON_GetObjectItem(json, "match_mode");
+    slot.match_mode   = mm_j ? (uint8_t)mm_j->valueint : 0;
+    cJSON *rm_j = cJSON_GetObjectItem(json, "replace_mode");
+    slot.replace_mode = rm_j ? (uint8_t)rm_j->valueint : 0;
+    strncpy(slot.label, cJSON_GetObjectItem(json, "label")->valuestring, sizeof(slot.label) - 1);
+    cJSON *payload_j = cJSON_GetObjectItem(json, "payload");
+    if (payload_j && payload_j->valuestring && payload_j->valuestring[0] != '\0') {
+        strncpy(slot.payload, payload_j->valuestring, sizeof(slot.payload) - 1);
+    } else {
+        // Empty payload — preserve existing value if slot already stored
+        hotkey_slot_t existing = {0};
+        if (storage_get_hotkey_slot((uint8_t)index, &existing) == ESP_OK) {
+            memcpy(slot.payload, existing.payload, sizeof(slot.payload));
+        }
+    }
     cJSON_Delete(json);
 
     esp_err_t err = storage_set_hotkey_slot(index, &slot);
@@ -487,6 +503,39 @@ static esp_err_t handler_time_get(httpd_req_t *req)
     return ESP_OK;
 }
 
+// ── Security API ─────────────────────────────────────────────────────────────
+// GET  /api/security         → {"flash_enc":"disabled"|"development"|"release"}
+// POST /api/security/release → transition Development → Release (burns eFuse, irreversible)
+
+static esp_err_t handler_security_get(httpd_req_t *req)
+{
+    esp_flash_enc_mode_t mode = esp_get_flash_encryption_mode();
+    const char *mode_str = (mode == ESP_FLASH_ENC_MODE_RELEASE)     ? "release"
+                         : (mode == ESP_FLASH_ENC_MODE_DEVELOPMENT)  ? "development"
+                                                                      : "disabled";
+    cJSON *obj = cJSON_CreateObject();
+    cJSON_AddStringToObject(obj, "flash_enc", mode_str);
+    send_json(req, obj);
+    cJSON_Delete(obj);
+    return ESP_OK;
+}
+
+static esp_err_t handler_security_release(httpd_req_t *req)
+{
+    esp_flash_enc_mode_t mode = esp_get_flash_encryption_mode();
+    if (mode == ESP_FLASH_ENC_MODE_DISABLED) {
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST,
+                            "Flash encryption is not enabled in this firmware");
+        return ESP_FAIL;
+    }
+    if (mode == ESP_FLASH_ENC_MODE_RELEASE) {
+        return send_ok(req);  // already in release mode
+    }
+    // Development → Release: burn eFuse bits (irreversible)
+    esp_flash_encryption_set_release_mode();
+    return send_ok(req);
+}
+
 // ── Logout ────────────────────────────────────────────────────────────────────
 // POST /api/logout — send response first, then stop the web server via a task
 
@@ -742,7 +791,7 @@ esp_err_t web_ui_start(void)
 
     httpd_config_t cfg = HTTPD_DEFAULT_CONFIG();
     cfg.uri_match_fn     = httpd_uri_match_wildcard;
-    cfg.max_uri_handlers = 20;
+    cfg.max_uri_handlers = 24;
     cfg.stack_size        = 8192;   // default 4096 overflows during OTA (buf[1024] + flash writes)
     cfg.recv_wait_timeout = 30;     // seconds; default 5 is too short for ~1.3 MB upload over WiFi
     cfg.send_wait_timeout = 30;
@@ -768,9 +817,11 @@ esp_err_t web_ui_start(void)
         { .uri = "/api/ota",        .method = HTTP_POST,   .handler = handler_ota_upload },
         { .uri = "/api/ota/fetch",  .method = HTTP_POST,   .handler = handler_ota_fetch },
         { .uri = "/api/ota/status", .method = HTTP_GET,    .handler = handler_ota_status },
-        { .uri = "/api/time",      .method = HTTP_GET,    .handler = handler_time_get },
-        { .uri = "/api/version",   .method = HTTP_GET,    .handler = handler_version_get },
-        { .uri = "/api/logout",    .method = HTTP_POST,   .handler = handler_logout },
+        { .uri = "/api/time",              .method = HTTP_GET,  .handler = handler_time_get },
+        { .uri = "/api/version",           .method = HTTP_GET,  .handler = handler_version_get },
+        { .uri = "/api/security",          .method = HTTP_GET,  .handler = handler_security_get },
+        { .uri = "/api/security/release",  .method = HTTP_POST, .handler = handler_security_release },
+        { .uri = "/api/logout",            .method = HTTP_POST, .handler = handler_logout },
     };
     for (size_t i = 0; i < sizeof(routes) / sizeof(routes[0]); i++) {
         httpd_register_uri_handler(s_server, &routes[i]);

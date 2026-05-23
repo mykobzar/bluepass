@@ -62,6 +62,7 @@ bool storage_has_wifi_creds(void)
 esp_err_t storage_get_hotkey_slot(uint8_t index, hotkey_slot_t *out)
 {
     if (index >= HOTKEY_SLOTS_MAX) return ESP_ERR_INVALID_ARG;
+    memset(out, 0, sizeof(*out));  // zero-init so new fields default correctly on old blobs
     nvs_handle_t h;
     ESP_RETURN_ON_ERROR(nvs_open(NS_HOTKEYS, NVS_READONLY, &h), TAG, "open failed");
     char key[8];
@@ -92,6 +93,22 @@ esp_err_t storage_delete_hotkey_slot(uint8_t index)
     ESP_RETURN_ON_ERROR(nvs_open(NS_HOTKEYS, NVS_READWRITE, &h), TAG, "open failed");
     char key[8];
     snprintf(key, sizeof(key), "s%u", index);
+
+    // Scrub payload before deletion so it does not linger in flash as a stale NVS page.
+    // NVS is log-structured: each write appends a new page; old pages are marked stale and
+    // reclaimed by GC. Writing zeros then 0xFF makes both passes unrecoverable even if GC
+    // has not yet run when the dump is taken.
+    hotkey_slot_t slot;
+    size_t len = sizeof(slot);
+    if (nvs_get_blob(h, key, &slot, &len) == ESP_OK) {
+        memset(slot.payload, 0x00, sizeof(slot.payload));
+        nvs_set_blob(h, key, &slot, sizeof(slot));
+        nvs_commit(h);
+        memset(slot.payload, 0xFF, sizeof(slot.payload));
+        nvs_set_blob(h, key, &slot, sizeof(slot));
+        nvs_commit(h);
+    }
+
     esp_err_t err = nvs_erase_key(h, key);
     if (err == ESP_ERR_NVS_NOT_FOUND) err = ESP_OK;
     if (err == ESP_OK) err = nvs_commit(h);

@@ -45,6 +45,12 @@
   }
   input[type=checkbox] { accent-color: var(--blue); width: auto; }
   input:focus, textarea:focus { border-color: var(--blue); }
+  select {
+    padding: 0.35rem 0.5rem; cursor: pointer;
+    background: var(--bg3); color: var(--text);
+    border: 1px solid var(--border); border-radius: 3px; outline: none;
+  }
+  select:focus { border-color: var(--blue); }
   button {
     padding: 0.35rem 0.8rem; cursor: pointer;
     background: var(--bg3); color: var(--text);
@@ -109,6 +115,16 @@
     flex-shrink: 0;
   }
   #logout-btn:hover { border-color: #c55; color: #c55; }
+  #settings-nav {
+    margin: -0.5rem 0 1rem 0.8rem;
+    padding: 0.3rem 0 0.3rem 0.9rem;
+    border-left: 2px solid var(--blue3);
+    display: none;
+  }
+  #settings-nav button {
+    font-size: 0.82rem;
+    padding: 0.25rem 0.65rem;
+  }
 </style>
 </head>
 <body>
@@ -132,8 +148,12 @@
   <button onclick="show('jiggler')">Jiggler</button>
   <button onclick="show('list')">List</button>
   <button onclick="show('ble')">Bluetooth</button>
+  <button onclick="show('wifi')">Settings</button>
+</nav>
+<nav id="settings-nav">
   <button onclick="show('wifi')">WiFi</button>
   <button onclick="show('ota')">Firmware</button>
+  <button onclick="show('security')">Security</button>
 </nav>
 
 <!-- Key Log -->
@@ -147,28 +167,54 @@
 <div id="tab-text" class="tab">
   <h3>Hotkey &#8594; Text</h3>
   <div id="text-list"></div>
-  <h4>Add</h4>
+  <h4 id="tx-form-title">Add</h4>
   <label>Label <input id="tx-label" type="text"></label>
   <label>Hotkey
     <input id="tx-hotkey" type="text" placeholder="e.g. &lt;Shift&gt;+&lt;R&gt; or &lt;0x32&gt; or &lt;PlayPause&gt;">
     <span class="hotkey-hint">Modifiers: &lt;Ctrl&gt; &lt;Shift&gt; &lt;Alt&gt; &lt;Win&gt; &lt;RCtrl&gt; &lt;RShift&gt; &lt;RAlt&gt; &lt;RWin&gt; — use hex: &lt;0x15&gt; keyboard / &lt;0x00CD&gt; consumer</span>
   </label>
+  <label>Match &amp; replace mode
+    <div style="display:flex;gap:0.5rem;margin-top:0.2rem">
+      <select id="tx-match-mode">
+        <option value="0">Exact (keycode + modifiers)</option>
+        <option value="1">Keycode only (ignore modifiers)</option>
+      </select>
+      <select id="tx-replace-mode">
+        <option value="0">Replace all</option>
+        <option value="1">Keep modifiers</option>
+      </select>
+    </div>
+  </label>
   <label>Text <input id="tx-payload" type="text"></label>
-  <button onclick="addSlot('text')">Add</button>
+  <button id="tx-add-btn" onclick="addSlot('text')">Add</button>
+  <button id="tx-cancel-btn" onclick="cancelEdit('text')" style="display:none;margin-left:0.4rem">Cancel</button>
 </div>
 
 <!-- Passwords -->
 <div id="tab-passwords" class="tab">
   <h3>Hotkey &#8594; Password</h3>
   <div id="pw-list"></div>
-  <h4>Add</h4>
+  <h4 id="pw-form-title">Add</h4>
   <label>Label <input id="pw-label" type="text"></label>
   <label>Hotkey
     <input id="pw-hotkey" type="text" placeholder="e.g. &lt;Ctrl&gt;+&lt;Shift&gt;+&lt;P&gt; or &lt;0x32&gt;">
     <span class="hotkey-hint">Modifiers: &lt;Ctrl&gt; &lt;Shift&gt; &lt;Alt&gt; &lt;Win&gt; &lt;RCtrl&gt; &lt;RShift&gt; &lt;RAlt&gt; &lt;RWin&gt; — use hex: &lt;0x15&gt; keyboard / &lt;0x00CD&gt; consumer</span>
   </label>
-  <label>Password <input id="pw-payload" type="password"></label>
-  <button onclick="addSlot('passwords')">Add</button>
+  <label>Match &amp; replace mode
+    <div style="display:flex;gap:0.5rem;margin-top:0.2rem">
+      <select id="pw-match-mode">
+        <option value="0">Exact (keycode + modifiers)</option>
+        <option value="1">Keycode only (ignore modifiers)</option>
+      </select>
+      <select id="pw-replace-mode">
+        <option value="0">Replace all</option>
+        <option value="1">Keep modifiers</option>
+      </select>
+    </div>
+  </label>
+  <label>Password <input id="pw-payload" type="password" placeholder="Enter new password (leave blank to keep current)"></label>
+  <button id="pw-add-btn" onclick="addSlot('passwords')">Add</button>
+  <button id="pw-cancel-btn" onclick="cancelEdit('passwords')" style="display:none;margin-left:0.4rem">Cancel</button>
 </div>
 
 <!-- TOTP -->
@@ -185,14 +231,27 @@
     <span id="totp-device-status">Device: checking…</span>
   </div>
   <div id="totp-list"></div>
-  <h4>Add</h4>
+  <h4 id="tp-form-title">Add</h4>
   <label>Service name <input id="tp-label" type="text"></label>
   <label>Hotkey
     <input id="tp-hotkey" type="text" placeholder="e.g. &lt;Ctrl&gt;+&lt;Shift&gt;+&lt;T&gt; or &lt;0x32&gt;">
     <span class="hotkey-hint">Modifiers: &lt;Ctrl&gt; &lt;Shift&gt; &lt;Alt&gt; &lt;Win&gt; &lt;RCtrl&gt; &lt;RShift&gt; &lt;RAlt&gt; &lt;RWin&gt; — use hex: &lt;0x15&gt; keyboard / &lt;0x00CD&gt; consumer</span>
   </label>
-  <label>TOTP secret (base32) <input id="tp-payload" type="password"></label>
-  <button onclick="addSlot('totp')">Add</button>
+  <label>Match &amp; replace mode
+    <div style="display:flex;gap:0.5rem;margin-top:0.2rem">
+      <select id="tp-match-mode">
+        <option value="0">Exact (keycode + modifiers)</option>
+        <option value="1">Keycode only (ignore modifiers)</option>
+      </select>
+      <select id="tp-replace-mode">
+        <option value="0">Replace all</option>
+        <option value="1">Keep modifiers</option>
+      </select>
+    </div>
+  </label>
+  <label>TOTP secret (base32) <input id="tp-payload" type="password" placeholder="Enter new secret (leave blank to keep current)"></label>
+  <button id="tp-add-btn" onclick="addSlot('totp')">Add</button>
+  <button id="tp-cancel-btn" onclick="cancelEdit('totp')" style="display:none;margin-left:0.4rem">Cancel</button>
   <details style="margin-top:1.2rem">
     <summary>&#128273; Import from Google Authenticator export link</summary>
     <div style="margin-top:0.6rem">
@@ -310,6 +369,61 @@
       <div id="ota-upload-status" class="status"></div>
     </div>
   </details>
+</div>
+
+<!-- Security -->
+<div id="tab-security" class="tab">
+  <h3>Security</h3>
+
+  <div id="sec-status" style="padding:0.75rem;background:var(--bg2);border:1px solid var(--border);border-radius:4px;margin-bottom:1.2rem">Loading…</div>
+
+  <table style="margin-bottom:1.3rem;font-size:0.87rem">
+    <thead><tr><th>Mode</th><th>Flash encryption</th><th>UART flash</th><th>JTAG</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><b>Disabled</b></td>
+        <td style="color:#c55">None — plaintext</td>
+        <td>Allowed</td>
+        <td>Allowed</td>
+      </tr>
+      <tr>
+        <td><b>Development</b></td>
+        <td style="color:#ff8c00">AES-XTS active</td>
+        <td>Allowed</td>
+        <td>Allowed</td>
+      </tr>
+      <tr>
+        <td><b>Release</b></td>
+        <td style="color:#4caf50">AES-XTS locked</td>
+        <td style="color:#c55;font-weight:bold">Disabled forever</td>
+        <td style="color:#c55;font-weight:bold">Disabled forever</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div id="sec-release-section" style="display:none">
+    <div style="background:#1a0000;border:1px solid #880000;padding:0.9rem;border-radius:4px;margin-bottom:0.9rem">
+      <div style="color:#ff4444;font-weight:bold;font-size:0.95rem;margin-bottom:0.6rem">&#9888;&#xFE0E; Irreversible action — read before proceeding</div>
+      <div style="font-size:0.87rem;line-height:1.65;color:#ddb8b8">
+        Switching to <b style="color:#ff4444">Release mode</b> permanently burns eFuse bits on this chip.
+        This cannot be undone — not even by Espressif.<br><br>
+        <span style="color:#ff4444;font-weight:bold">You permanently lose:</span><br>
+        &bull; <b>UART flashing</b> — <code>idf.py flash</code> will stop working<br>
+        &bull; <b>JTAG debugging</b> — hardware debug access is closed forever<br>
+        &bull; <b>Encryption key</b> — locked inside eFuse with no way to extract it<br><br>
+        <span style="color:#ffaa44;font-weight:bold">What still works after switching:</span><br>
+        &bull; OTA firmware updates via this web UI<br>
+        &bull; Normal device operation<br><br>
+        <span style="color:#ff4444;font-weight:bold">Verify that OTA updates work correctly before proceeding.</span>
+        If OTA is broken and you switch to Release mode, <b>the device cannot be reflashed.</b>
+      </div>
+    </div>
+    <button id="sec-release-btn" onclick="securityRelease()"
+            style="background:#4a0000;border-color:#cc0000;color:#ff6666;font-weight:bold;padding:0.45rem 1.1rem">
+      Switch to Release Mode
+    </button>
+  </div>
+  <div id="sec-msg" class="status"></div>
 </div>
 
 <script>
@@ -449,8 +563,13 @@ function formatConsumer(cc) {
   return `<${n}>`;
 }
 function fmtTrigger(s) {
-  return s.consumer_code ? formatConsumer(s.consumer_code)
-                         : formatCombo(s.modifiers, s.keycode);
+  let combo = s.consumer_code ? formatConsumer(s.consumer_code)
+                              : formatCombo(s.modifiers, s.keycode);
+  const hints = [];
+  if (!s.consumer_code && s.match_mode === 1) hints.push('any-mod');
+  if (s.replace_mode === 1) hints.push('keep-mod');
+  if (hints.length) combo += ' [' + hints.join(', ') + ']';
+  return combo;
 }
 
 // Parse "<Mod>+<Key>" or "<0x15>" or "<0x00CD>" into {mod, kc, cc}
@@ -525,8 +644,12 @@ async function checkDeviceTime() {
 function show(name) {
   document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
   document.getElementById('tab-' + name).classList.add('active');
-  if (name === 'ble')  { loadBleStatus(); loadBleLog(); }
-  if (name === 'list') { renderList(); }
+  const mainNavVisible = document.getElementById('main-nav').style.display !== 'none';
+  document.getElementById('settings-nav').style.display =
+    (mainNavVisible && ['wifi','ota','security'].includes(name)) ? 'block' : 'none';
+  if (name === 'ble')      { loadBleStatus(); loadBleLog(); }
+  if (name === 'list')     { renderList(); }
+  if (name === 'security') { loadSecurity(); }
   if (name === 'totp') {
     updateTotpClock();
     if (!s_totpTimer) s_totpTimer = setInterval(updateTotpClock, 1000);
@@ -716,19 +839,23 @@ async function bleConnect(d) {
 // ── Hotkey slots ──────────────────────────────────────────────────────────────
 const TAB_TYPES = { passwords: TYPE_PASSWORD, text: TYPE_TEXT, totp: TYPE_TOTP };
 let s_usedSlots = new Set();
+let s_slots = {};
+let s_editingSlot = { passwords: null, text: null, totp: null };
 
 async function loadSlots() {
   const r = await fetch('/api/slots');
   const slots = await r.json();
   s_usedSlots = new Set(slots.map(s => s.index));
+  s_slots = {};
+  for (const s of slots) s_slots[s.index] = s;
   const lists = { passwords: [], text: [], totp: [] };
   for (const s of slots) {
     const key = ['passwords','text','totp'][s.type] || 'text';
     lists[key].push(s);
   }
-  renderSlotList('pw-list',   lists.passwords);
-  renderSlotList('text-list', lists.text);
-  renderSlotList('totp-list', lists.totp);
+  renderSlotList('pw-list',   lists.passwords, 'passwords');
+  renderSlotList('text-list', lists.text,      'text');
+  renderSlotList('totp-list', lists.totp,      'totp');
 }
 
 function firstFreeSlot() {
@@ -742,7 +869,7 @@ function slotText(s) {
   return s.payload;
 }
 
-function renderSlotList(id, slots) {
+function renderSlotList(id, slots, tabName) {
   const el = document.getElementById(id);
   if (!slots.length) { el.innerHTML = '<p>No entries yet.</p>'; return; }
   el.innerHTML =
@@ -752,13 +879,17 @@ function renderSlotList(id, slots) {
         + `<td>${htmlEsc(s.label)}</td>`
         + `<td>${htmlEsc(fmtTrigger(s))}</td>`
         + `<td>${htmlEsc(slotText(s))}</td>`
-        + `<td><button onclick="deleteSlot(${s.index})">Delete</button></td></tr>`
+        + `<td>`
+        + `<button onclick="editSlot(${s.index},'${tabName}')">Edit</button> `
+        + `<button onclick="deleteSlot(${s.index})">Delete</button>`
+        + `</td></tr>`
       ).join('')
     + '</table>';
 }
 
 async function addSlot(tabName) {
-  const idx = firstFreeSlot();
+  const editIndex = s_editingSlot[tabName];
+  const idx = editIndex !== null ? editIndex : firstFreeSlot();
   if (idx < 0) { alert('All 16 slots are used. Delete one first.'); return; }
   const pfx    = { passwords:'pw', text:'tx', totp:'tp' }[tabName];
   const parsed = parseHotkeyString(document.getElementById(pfx + '-hotkey').value);
@@ -771,18 +902,125 @@ async function addSlot(tabName) {
       keycode:       parsed.kc,
       consumer_code: parsed.cc,
       payload:       document.getElementById(pfx + '-payload').value,
+      match_mode:    parseInt(document.getElementById(pfx + '-match-mode').value),
+      replace_mode:  parseInt(document.getElementById(pfx + '-replace-mode').value),
     }),
     headers: { 'Content-Type': 'application/json' }
   });
-  document.getElementById(pfx + '-label').value   = '';
-  document.getElementById(pfx + '-payload').value = '';
-  document.getElementById(pfx + '-hotkey').value  = '';
+  cancelEdit(tabName);
   loadSlots();
 }
 
 async function deleteSlot(index) {
+  for (const tab of Object.keys(s_editingSlot)) {
+    if (s_editingSlot[tab] === index) cancelEdit(tab);
+  }
   await fetch('/api/slots/' + index, { method: 'DELETE' });
   loadSlots();
+}
+
+function fmtHotkeyInput(s) {
+  if (s.consumer_code) {
+    const n = CONSUMER_TO_NAME[s.consumer_code];
+    return n ? `<${n}>` : `<0x${s.consumer_code.toString(16).padStart(4,'0')}>`;
+  }
+  return formatComboRaw(s.modifiers, s.keycode);
+}
+
+function editSlot(index, tabName) {
+  const s = s_slots[index];
+  if (!s) return;
+  const pfx = { passwords:'pw', text:'tx', totp:'tp' }[tabName];
+  document.getElementById(pfx + '-label').value        = s.label;
+  document.getElementById(pfx + '-hotkey').value       = fmtHotkeyInput(s);
+  document.getElementById(pfx + '-match-mode').value   = String(s.match_mode  || 0);
+  document.getElementById(pfx + '-replace-mode').value = String(s.replace_mode || 0);
+  document.getElementById(pfx + '-payload').value = (s.type === TYPE_TEXT) ? s.payload : '';
+  s_editingSlot[tabName] = index;
+  document.getElementById(pfx + '-form-title').textContent    = 'Edit';
+  document.getElementById(pfx + '-add-btn').textContent       = 'Save';
+  document.getElementById(pfx + '-cancel-btn').style.display  = 'inline';
+  document.getElementById(pfx + '-form-title').scrollIntoView({ behavior: 'smooth' });
+}
+
+function cancelEdit(tabName) {
+  const pfx = { passwords:'pw', text:'tx', totp:'tp' }[tabName];
+  s_editingSlot[tabName] = null;
+  document.getElementById(pfx + '-form-title').textContent    = 'Add';
+  document.getElementById(pfx + '-add-btn').textContent       = 'Add';
+  document.getElementById(pfx + '-cancel-btn').style.display  = 'none';
+  document.getElementById(pfx + '-label').value        = '';
+  document.getElementById(pfx + '-payload').value      = '';
+  document.getElementById(pfx + '-hotkey').value       = '';
+  document.getElementById(pfx + '-match-mode').value   = '0';
+  document.getElementById(pfx + '-replace-mode').value = '0';
+}
+
+// ── Security ──────────────────────────────────────────────────────────────────
+async function loadSecurity() {
+  const statusEl  = document.getElementById('sec-status');
+  const sectionEl = document.getElementById('sec-release-section');
+  const msgEl     = document.getElementById('sec-msg');
+  msgEl.textContent = '';
+  try {
+    const r = await fetch('/api/security');
+    const d = await r.json();
+    switch (d.flash_enc) {
+      case 'disabled':
+        statusEl.innerHTML =
+          '<span style="color:#c55;font-weight:bold">&#9888;&#xFE0E; Flash encryption: DISABLED</span><br>' +
+          '<span style="color:#ddb8b8;font-size:0.87rem">All data is stored in plaintext on the flash chip.<br>' +
+          'Passwords, TOTP secrets and settings are readable by anyone with physical access to the device.<br>' +
+          '<span style="color:var(--dim)">To enable encryption, rebuild firmware with <code>CONFIG_SECURE_FLASH_ENC_ENABLED=y</code>.</span></span>';
+        sectionEl.style.display = 'none';
+        break;
+      case 'development':
+        statusEl.innerHTML =
+          '<span style="color:#ff8c00;font-weight:bold">Flash encryption: Development mode</span><br>' +
+          '<span style="color:var(--dim);font-size:0.87rem">Data is encrypted (AES-XTS). Key is stored in eFuse.<br>' +
+          'UART flashing and JTAG are still allowed — protection is partial.<br>' +
+          'Switch to Release mode below for full protection.</span>';
+        sectionEl.style.display = 'block';
+        document.getElementById('sec-release-btn').disabled = false;
+        break;
+      case 'release':
+        statusEl.innerHTML =
+          '<span style="color:#4caf50;font-weight:bold">&#10003; Flash encryption: Release mode (fully secured)</span><br>' +
+          '<span style="color:var(--dim);font-size:0.87rem">AES-XTS active. Key locked in eFuse.<br>' +
+          'UART flashing and JTAG are permanently disabled. Updates only via OTA.</span>';
+        sectionEl.style.display = 'none';
+        break;
+    }
+  } catch (_) {
+    statusEl.textContent = 'Failed to load security status.';
+  }
+}
+
+async function securityRelease() {
+  const msg = 'Switch to Release mode?\n\n' +
+    'This will permanently burn eFuse bits on this chip.\n' +
+    'UART flashing and JTAG will be DISABLED FOREVER.\n' +
+    'Firmware updates will only be possible via OTA.\n\n' +
+    'THIS CANNOT BE UNDONE. Continue?';
+  if (!confirm(msg)) return;
+
+  const btn   = document.getElementById('sec-release-btn');
+  const msgEl = document.getElementById('sec-msg');
+  btn.disabled = true;
+  msgEl.textContent = 'Burning eFuse bits…';
+  try {
+    const r = await fetch('/api/security/release', { method: 'POST' });
+    if (r.ok) {
+      msgEl.textContent = 'Done. Release mode is now active.';
+      loadSecurity();
+    } else {
+      msgEl.textContent = 'Error: ' + (await r.text());
+      btn.disabled = false;
+    }
+  } catch (e) {
+    msgEl.textContent = 'Error: ' + e;
+    btn.disabled = false;
+  }
 }
 
 // ── Jiggler ───────────────────────────────────────────────────────────────────

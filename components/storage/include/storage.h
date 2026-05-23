@@ -21,6 +21,8 @@ typedef struct {
     char payload[HOTKEY_PAYLOAD_MAX];     // secret / text / TOTP base32 key
     char label[HOTKEY_LABEL_MAX];         // display name (shown in UI)
     bool active;
+    uint8_t match_mode;    // 0 = exact (keycode + modifiers, default); 1 = keycode only
+    uint8_t replace_mode;  // 0 = replace all (default); 1 = keep modifiers after substitution
 } hotkey_slot_t;
 
 typedef struct {
