@@ -23,9 +23,9 @@ static void on_jiggler_state(bool enabled)
 
 #define TAG "bluepass"
 
-// GPIO0 is the BOOT button present on ESP32-S3 SuperMini
-#define GPIO_BUTTON        GPIO_NUM_0
 #define LONG_PRESS_US      (10 * 1000 * 1000)  // 10 seconds in microseconds
+
+static gpio_num_t s_btn_gpio = GPIO_NUM_0;  // default; overridden from board config
 
 static esp_timer_handle_t s_btn_timer;
 static int64_t s_btn_press_us;
@@ -65,7 +65,7 @@ static void btn_long_press_cb(void *arg)
 
 static void IRAM_ATTR btn_isr(void *arg)
 {
-    int level = gpio_get_level(GPIO_BUTTON);
+    int level = gpio_get_level(s_btn_gpio);
     int64_t now = esp_timer_get_time();
 
     if (level == 0) {
@@ -87,7 +87,7 @@ static void IRAM_ATTR btn_isr(void *arg)
 static void gpio_init(void)
 {
     const gpio_config_t btn_cfg = {
-        .pin_bit_mask = 1ULL << GPIO_BUTTON,
+        .pin_bit_mask = 1ULL << s_btn_gpio,
         .mode         = GPIO_MODE_INPUT,
         .pull_up_en   = GPIO_PULLUP_ENABLE,
         .intr_type    = GPIO_INTR_ANYEDGE,
@@ -95,7 +95,7 @@ static void gpio_init(void)
     ESP_ERROR_CHECK(gpio_config(&btn_cfg));
 
     ESP_ERROR_CHECK(gpio_install_isr_service(0));
-    ESP_ERROR_CHECK(gpio_isr_handler_add(GPIO_BUTTON, btn_isr, NULL));
+    ESP_ERROR_CHECK(gpio_isr_handler_add(s_btn_gpio, btn_isr, NULL));
 
     const esp_timer_create_args_t timer_args = {
         .callback = btn_long_press_cb,
@@ -118,6 +118,10 @@ void app_main(void)
 
     ESP_ERROR_CHECK(esp_event_loop_create_default());
     ESP_ERROR_CHECK(storage_init());
+
+    board_config_t board;
+    storage_get_board_config(&board);
+    s_btn_gpio = (gpio_num_t)board.btn_gpio;
 
     xTaskCreate(btn_task, "btn", 4096, NULL, 5, &s_btn_task);
     gpio_init();

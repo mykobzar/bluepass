@@ -64,3 +64,21 @@ esp_err_t storage_set_jiggler_config(const jiggler_config_t *cfg);
 esp_err_t storage_get_ble_peer(ble_peer_t *out);
 esp_err_t storage_set_ble_peer(const ble_peer_t *peer);
 esp_err_t storage_clear_ble_peer(void);
+
+typedef enum {
+    BOARD_LED_TYPE_NONE   = 0,
+    BOARD_LED_TYPE_RGB    = 1,  // WS2812 via RMT
+    BOARD_LED_TYPE_SIMPLE = 2,  // plain GPIO output
+} board_led_type_t;
+
+typedef struct {
+    int32_t btn_gpio;           // button GPIO, default 0
+    uint8_t led_type;           // board_led_type_t, default BOARD_LED_TYPE_RGB
+    int32_t rgb_gpio;           // WS2812 LED GPIO, default 48
+    uint8_t rgb_brightness;     // 1-100 percent, default 4
+    int32_t simple_gpio;        // plain LED GPIO, default -1 (not configured)
+    uint8_t simple_active_high; // 1=active high, 0=active low, default 1
+} board_config_t;
+
+esp_err_t storage_get_board_config(board_config_t *out);
+esp_err_t storage_set_board_config(const board_config_t *cfg);

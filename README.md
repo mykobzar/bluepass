@@ -1,32 +1,94 @@
 # bluepass
 
-> Bluetooth → USB HID bridge with password injection, TOTP codes and jiggler — firmware for ESP32-S3 SuperMini.
+> Hardware Bluetooth → USB HID bridge with password injection, TOTP codes and jiggler — firmware for ESP32-S3.
 
-![Version](https://img.shields.io/badge/version-0.9.13-blue)
+![Version](https://img.shields.io/badge/version-0.9.14-blue)
 ![ESP-IDF](https://img.shields.io/badge/ESP--IDF-v5.2%2B-blue)
 ![Target](https://img.shields.io/badge/target-ESP32--S3-informational)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
 ---
 
+## What is bluepass?
+
+bluepass is a small hardware device that sits between a Bluetooth keyboard and a laptop. It forwards all keystrokes transparently — the laptop sees a standard USB HID keyboard and never knows there is anything in between.
+
+The interesting part is what happens to *certain* key combinations. You assign hotkeys to stored secrets: a password, a TOTP code, or a block of text. When you press the hotkey on your Bluetooth keyboard, bluepass intercepts it and types the secret on the laptop character by character, over USB, without ever exposing it to software on the host.
+
+There is no driver, no browser extension, and no software to install. The secrets live in the device flash, encrypted at rest. The web management interface is hosted locally on the device and is **never reachable without a deliberate button press** — it activates on demand and shuts itself off after five minutes of inactivity.
+
+### What problem does it solve?
+
+Password managers and TOTP apps require software on the host. On locked-down corporate machines, kiosks, remote-desktop sessions, or shared workstations you often cannot install anything. bluepass requires nothing from the host — it looks like a USB keyboard.
+
+It also means your secrets are never typed by software on the host. A keylogger on the host sees keystrokes but has no way to distinguish a real keystroke from a substituted one, and the source of the secret never touches host memory.
+
+---
+
 ## What it does
 
-bluepass sits between a Bluetooth keyboard and a laptop:
-
 ```
-Bluetooth keyboard  ──BLE──▶  [ESP32-S3 SuperMini]  ──USB HID──▶  laptop
+Bluetooth keyboard  ──BLE──▶  [ESP32-S3 board]  ──USB HID──▶  laptop
 ```
 
-All keystrokes are forwarded transparently. Configured hotkey combinations are intercepted and replaced with:
+All keystrokes pass through transparently. Configured hotkey combinations are intercepted and replaced with:
 
 | Substitution | Description |
 |---|---|
 | **Password** | Stored secret typed as keystrokes; never exposed over the API |
 | **Text** | Arbitrary string, including characters the physical keyboard cannot produce |
 | **TOTP code** | Live 6-digit code (RFC 6238 / Google Authenticator) |
-| **Jiggler** | Toggles periodic keypress to prevent the laptop from sleeping |
+| **Jiggler** | Toggles periodic keypresses to prevent the laptop from sleeping |
 
-The web interface is only available over WiFi and **only after an explicit button press** — it is never exposed on boot.
+The web interface is available over WiFi and **only after an explicit button press** — it is never exposed on boot.
+
+---
+
+## Compatible hardware
+
+bluepass has two hard requirements on the microcontroller:
+
+- **BLE host mode** — to receive HID reports from a Bluetooth keyboard
+- **Native USB OTG** — to present itself as a USB HID keyboard to the host (a USB-UART bridge is not sufficient; the port must be wired to the chip's USB OTG peripheral)
+
+Among the current ESP32 family, **only the ESP32-S3** satisfies both requirements simultaneously. The table below shows why:
+
+| Chip | BLE | Native USB OTG | WiFi | Compatible |
+|---|---|---|---|---|
+| **ESP32-S3** | BLE 5.0 ✓ | USB OTG ✓ | 802.11 b/g/n ✓ | ✅ **Full support** |
+| ESP32-S2 | None ✗ | USB OTG ✓ | 802.11 b/g/n ✓ | ❌ No BLE |
+| ESP32-C3 | BLE 5.0 ✓ | Serial/JTAG only ✗ | 802.11 b/g/n ✓ | ❌ No USB HID |
+| ESP32-C6 | BLE 5.3 ✓ | None ✗ | WiFi 6 ✓ | ❌ No USB OTG |
+| ESP32-H2 | BLE 5.3 ✓ | None ✗ | None ✗ | ❌ No USB, no WiFi |
+| ESP32-C2 | BLE 5.0 ✓ | None ✗ | 802.11 b/g/n ✓ | ❌ No USB OTG |
+| ESP32 (classic) | BT 4.2 (classic) ✓ | None ✗ | 802.11 b/g/n ✓ | ❌ No USB OTG |
+| ESP32-P4 | None (external) ✗ | USB OTG ✓ | None (external) ✗ | ❌ No BLE or WiFi |
+
+### Tested and supported boards
+
+The **Board** tab in the web interface lets you configure which GPIO pins the button and LED are on, so bluepass adapts to different ESP32-S3 boards without reflashing.
+
+| Board | USB-C wired to OTG? | Built-in button | Built-in LED | Default config |
+|---|---|---|---|---|
+| **ESP32-S3 SuperMini** ⭐ | Yes | GPIO0 | WS2812 RGB on GPIO48 | Ready to use |
+| Seeed Studio XIAO ESP32-S3 | Yes | GPIO0 (boot pad) | None / GPIO2 on Sense variant | Set LED GPIO to 2 or None |
+| Adafruit QT Py ESP32-S3 | Yes | GPIO0 (boot pad) | NeoPixel on GPIO39 | Set LED GPIO to 39 |
+| Adafruit Feather ESP32-S3 | Yes | GPIO0 (boot pad) | NeoPixel on GPIO33 | Set LED GPIO to 33 |
+| ESP32-S3-DevKitC-1 | Yes (USB port, not UART) | GPIO0 | RGB LED on GPIO38 or GPIO48 | Set LED GPIO accordingly |
+| M5Stack StampS3 | Yes | GPIO0 | RGB LED on GPIO21 | Set LED GPIO to 21, type RGB |
+
+> **Note for boards without a button:** GPIO0 is the ROM bootloader entry pin and is pulled up by default. A momentary switch to GND on GPIO0 works as the bluepass button on any board.
+
+> **Note for boards with a simple LED (not WS2812):** Set LED type to *Simple* in the Board tab and configure the GPIO and active level. The same state machine (web UI active, WiFi error, jiggler, substitution flash) works with both LED types; the simple LED shows on/off instead of colour.
+
+### Flash and RAM requirements
+
+| Resource | Minimum | Recommended |
+|---|---|---|
+| Flash | 4 MB | 8 MB |
+| RAM | 512 KB internal | 512 KB + PSRAM |
+
+The partition layout uses dual OTA slots (each 1.75 MB) plus NVS. 4 MB flash is the minimum for OTA updates. 8 MB flash allows larger future firmware and leaves more room for NVS.
 
 ---
 
@@ -34,7 +96,7 @@ The web interface is only available over WiFi and **only after an explicit butto
 
 | Part | Notes |
 |---|---|
-| ESP32-S3 SuperMini | Main board |
+| ESP32-S3 SuperMini | Main board (or any compatible board above) |
 | USB-C cable (data) | Connects to the laptop — powers the device and acts as the USB HID keyboard |
 | Bluetooth keyboard | Any BLE HID keyboard |
 
@@ -57,18 +119,18 @@ Then flash (replace the port with yours):
 # Linux / macOS
 esptool.py --chip esp32s3 --port /dev/ttyUSB0 --baud 460800 write_flash \
   --flash_mode dio --flash_freq 80m --flash_size 4MB \
-  0x0     firmware/bootloader-0.9.13.bin \
-  0x8000  firmware/partition-table-0.9.13.bin \
-  0x10000 firmware/ota_data_initial-0.9.13.bin \
-  0x20000 firmware/bluepass-0.9.13.bin
+  0x0     firmware/bootloader-0.9.14.bin \
+  0x8000  firmware/partition-table-0.9.14.bin \
+  0x10000 firmware/ota_data_initial-0.9.14.bin \
+  0x20000 firmware/bluepass-0.9.14.bin
 
 # Windows — use COM3, COM4, etc.
 esptool.py --chip esp32s3 --port COM3 --baud 460800 write_flash ^
   --flash_mode dio --flash_freq 80m --flash_size 4MB ^
-  0x0     firmware\bootloader-0.9.13.bin ^
-  0x8000  firmware\partition-table-0.9.13.bin ^
-  0x10000 firmware\ota_data_initial-0.9.13.bin ^
-  0x20000 firmware\bluepass-0.9.13.bin
+  0x0     firmware\bootloader-0.9.14.bin ^
+  0x8000  firmware\partition-table-0.9.14.bin ^
+  0x10000 firmware\ota_data_initial-0.9.14.bin ^
+  0x20000 firmware\bluepass-0.9.14.bin
 ```
 
 > **Windows GUI option:** see [`firmware/README.md`](firmware/README.md) for step-by-step instructions using the Espressif Flash Download Tool (no Python required).
@@ -120,7 +182,7 @@ First build: 3–7 minutes. Incremental builds: seconds.
 
 ### 6. Flash
 
-Connect the ESP32-S3 SuperMini to your development machine via USB-C. Find the port:
+Connect the ESP32-S3 board to your development machine via USB-C. Find the port:
 
 ```bash
 # Linux
@@ -177,13 +239,13 @@ http://192.168.4.1
 
 ### Step 3 — set your WiFi credentials
 
-On the **WiFi** tab enter your network SSID and password, then click **Save & Reboot**.  
+On the **Settings → WiFi** tab enter your network SSID and password, then click **Save & Reboot**.  
 The device reboots and joins your network.
 
 ### Step 4 — activate the web interface
 
 The web UI is **not started automatically** after connecting to WiFi.  
-**Short-press the GPIO0 button** on the board to toggle it on.
+**Short-press the button** (GPIO0 by default) on the board to toggle it on.
 
 Find the device IP in your router's client list (hostname: `bluepass`) and open it in a browser.
 
@@ -198,24 +260,27 @@ The paired address is saved to NVS and reconnected automatically on the next boo
 
 ---
 
-## GPIO0 button
+## Button
 
 | Press duration | Action |
 |---|---|
 | Short (< 10 s) | Toggle the web interface on / off |
 | Long (≥ 10 s) | Erase WiFi credentials → start access point + web interface |
 
+The button GPIO can be changed in **Settings → Board**. Default: GPIO0.
+
 **LED behaviour:**
 
-| State | LED |
-|---|---|
-| Web interface active | Solid **blue** |
-| WiFi not connected / no credentials | **Red** fast blink (5 Hz) |
-| Jiggler running | **Green** slow blink (1 Hz) |
-| Password / text / TOTP substituted | Single white 150 ms flash |
-| Connected, idle | Off |
+| State | WS2812 RGB LED | Simple LED |
+|---|---|---|
+| Web interface active | Solid **blue** | On |
+| WiFi not connected / no credentials | **Red** fast blink (5 Hz) | Fast blink |
+| Jiggler running | **Green** slow blink (1 Hz) | Slow blink |
+| Password / text / TOTP substituted | Single **white** 150 ms flash | 150 ms pulse |
+| Connected, idle | Off | Off |
 
-The web interface **turns off automatically after 5 minutes of inactivity** (no browser requests). Short-press GPIO0 to reactivate it.
+LED type (RGB / Simple / None), GPIO pin, and brightness are configurable in **Settings → Board**.  
+The web interface **turns off automatically after 5 minutes of inactivity** (no browser requests).
 
 ---
 
@@ -223,7 +288,7 @@ The web interface **turns off automatically after 5 minutes of inactivity** (no 
 
 | Tab | Purpose |
 |---|---|
-| **Log** | Live stream of all received and forwarded keycodes |
+| **Info** | WiFi and Bluetooth connection status with signal strength; live key log |
 | **Text** | Hotkey → arbitrary text substitution |
 | **Passwords** | Hotkey → password (masked in the UI, never returned by the API) |
 | **TOTP** | Hotkey → TOTP code; shows device clock sync status |
@@ -233,6 +298,7 @@ The web interface **turns off automatically after 5 minutes of inactivity** (no 
 | **Settings → WiFi** | Change WiFi network (triggers reboot) |
 | **Settings → Firmware** | OTA firmware update |
 | **Settings → Security** | Flash encryption status; switch from Development to Release mode |
+| **Settings → Board** | Button GPIO; LED type (RGB / Simple / None), GPIO and brightness |
 
 ---
 
@@ -306,6 +372,21 @@ Passwords and TOTP secrets are never shown in the UI. To change a secret, type a
 ### Secure deletion
 
 When a Password or TOTP slot is deleted, the stored payload is overwritten twice (first with `0x00`, then with `0xFF`) before the NVS key is erased. This ensures the secret does not persist in flash as a recoverable stale NVS page.
+
+### Board configuration
+
+The **Settings → Board** tab configures the physical GPIO assignments without reflashing:
+
+| Setting | Default | Description |
+|---|---|---|
+| Button GPIO | 0 | GPIO pin for the control button |
+| LED type | RGB | WS2812 RGB (via RMT) or simple GPIO output or None |
+| RGB GPIO | 48 | Data pin for the WS2812 LED |
+| Brightness | 4% | RGB LED brightness (1–100%) |
+| Simple GPIO | — | GPIO pin for a plain (non-RGB) LED |
+| Active high | Yes | Whether the simple LED is on when GPIO is high |
+
+Changes take effect after reboot.
 
 ### Flash encryption
 
@@ -392,6 +473,7 @@ Full list available on the **List** tab in the web interface.
 | `hotkeys` | Slot array: type, trigger combo, payload/secret, label |
 | `jiggler` | Interval, key, on/off hotkeys, enabled state |
 | `ble` | Paired keyboard address + name |
+| `board` | Button GPIO, LED type, LED GPIO, brightness |
 
 Up to **16 hotkey slots** total across passwords, text and TOTP.
 
@@ -399,7 +481,7 @@ Up to **16 hotkey slots** total across passwords, text and TOTP.
 
 ## Full factory reset
 
-Erases all flash including NVS — removes WiFi, hotkeys, TOTP secrets, jiggler config, and paired keyboard:
+Erases all flash including NVS — removes WiFi, hotkeys, TOTP secrets, jiggler config, paired keyboard, and board config:
 
 ```bash
 idf.py -p /dev/ttyUSB0 erase-flash
@@ -407,7 +489,7 @@ idf.py -p /dev/ttyUSB0 erase-flash
 
 Then flash the firmware again and run through first-time setup.
 
-**WiFi-only reset:** hold GPIO0 for ≥ 10 seconds. Hotkeys, TOTP secrets, and jiggler settings are preserved.
+**WiFi-only reset:** hold the button for ≥ 10 seconds. Hotkeys, TOTP secrets, jiggler settings, and board config are preserved.
 
 ---
 

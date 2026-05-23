@@ -154,6 +154,7 @@
   <button onclick="show('wifi')">WiFi</button>
   <button onclick="show('ota')">Firmware</button>
   <button onclick="show('security')">Security</button>
+  <button onclick="show('board')">Board</button>
 </nav>
 
 <!-- Info -->
@@ -424,10 +425,10 @@
         <div style="color:var(--dim);font-size:0.82rem;margin-bottom:0.3rem">Flash command (Linux / macOS):</div>
         <code style="display:block;background:#111;padding:0.5rem 0.7rem;border-radius:3px;font-size:0.8rem;line-height:1.7;color:var(--blue);white-space:pre-wrap">esptool.py --chip esp32s3 --port /dev/ttyUSB0 --baud 460800 write_flash \
   --flash_mode dio --flash_freq 80m --flash_size 4MB \
-  0x0     bootloader-0.9.11.bin \
-  0x8000  partition-table-0.9.11.bin \
-  0x10000 ota_data_initial-0.9.11.bin \
-  0x20000 bluepass-0.9.11.bin</code>
+  0x0     bootloader-0.9.14.bin \
+  0x8000  partition-table-0.9.14.bin \
+  0x10000 ota_data_initial-0.9.14.bin \
+  0x20000 bluepass-0.9.14.bin</code>
         <div style="color:var(--dim);font-size:0.82rem;margin-top:0.5rem">
           Binaries: <a href="https://github.com/mykobzar/bluepass/releases/latest" target="_blank">github.com/mykobzar/bluepass/releases/latest</a>
         </div>
@@ -458,6 +459,64 @@
     </button>
   </div>
   <div id="sec-msg" class="status"></div>
+</div>
+
+<!-- Board -->
+<div id="tab-board" class="tab">
+  <h3>Board</h3>
+
+  <div style="max-width:480px">
+
+    <fieldset style="margin-bottom:1.2rem;padding:0.8rem 1rem;border:1px solid var(--border);border-radius:4px">
+      <legend style="padding:0 0.4rem;font-size:0.88rem;color:var(--dim)">Button</legend>
+      <label style="display:flex;align-items:center;gap:0.7rem;margin-top:0.2rem">
+        GPIO pin
+        <input id="bd-btn-gpio" type="number" min="0" max="48" style="width:5rem">
+      </label>
+    </fieldset>
+
+    <fieldset style="margin-bottom:1.2rem;padding:0.8rem 1rem;border:1px solid var(--border);border-radius:4px">
+      <legend style="padding:0 0.4rem;font-size:0.88rem;color:var(--dim)">Status LED</legend>
+
+      <div style="margin-bottom:0.7rem">
+        <label style="display:block;margin-bottom:0.3rem;font-size:0.88rem;color:var(--dim)">LED type</label>
+        <select id="bd-led-type" onchange="boardLedTypeChanged()" style="width:100%">
+          <option value="0">None</option>
+          <option value="1">RGB (WS2812)</option>
+          <option value="2">Simple (GPIO)</option>
+        </select>
+      </div>
+
+      <div id="bd-rgb-section">
+        <label style="display:flex;align-items:center;gap:0.7rem;margin-bottom:0.5rem">
+          GPIO pin
+          <input id="bd-rgb-gpio" type="number" min="0" max="48" style="width:5rem">
+        </label>
+        <label style="display:flex;align-items:center;gap:0.7rem">
+          Brightness
+          <input id="bd-rgb-brightness" type="range" min="1" max="100" style="flex:1">
+          <span id="bd-rgb-brightness-val" style="width:3rem;text-align:right">4%</span>
+        </label>
+      </div>
+
+      <div id="bd-simple-section" style="display:none">
+        <label style="display:flex;align-items:center;gap:0.7rem;margin-bottom:0.5rem">
+          GPIO pin
+          <input id="bd-simple-gpio" type="number" min="0" max="48" style="width:5rem">
+        </label>
+        <label style="display:flex;align-items:center;gap:0.7rem">
+          <input id="bd-simple-active-high" type="checkbox">
+          Active high (LED anode → GPIO, cathode → GND)
+        </label>
+      </div>
+    </fieldset>
+
+    <div style="display:flex;gap:0.7rem;align-items:center">
+      <button onclick="saveBoard()">Save</button>
+      <span style="font-size:0.82rem;color:var(--dim)">Changes take effect after reboot.</span>
+    </div>
+    <div id="bd-msg" class="status" style="margin-top:0.5rem"></div>
+  </div>
 </div>
 
 <script>
@@ -680,11 +739,12 @@ function show(name) {
   document.getElementById('tab-' + name).classList.add('active');
   const mainNavVisible = document.getElementById('main-nav').style.display !== 'none';
   document.getElementById('settings-nav').style.display =
-    (mainNavVisible && ['wifi','ota','security'].includes(name)) ? 'block' : 'none';
+    (mainNavVisible && ['wifi','ota','security','board'].includes(name)) ? 'block' : 'none';
   if (name === 'log')      { loadInfoCards(); }
   if (name === 'ble')      { loadBleStatus(); loadBleLog(); }
   if (name === 'list')     { renderList(); }
   if (name === 'security') { loadSecurity(); }
+  if (name === 'board')    { loadBoard(); }
   if (name === 'totp') {
     updateTotpClock();
     if (!s_totpTimer) s_totpTimer = setInterval(updateTotpClock, 1000);
@@ -1092,6 +1152,54 @@ async function securityRelease() {
     msgEl.textContent = 'Error: ' + e;
     btn.disabled = false;
   }
+}
+
+// ── Board config ──────────────────────────────────────────────────────────────
+async function loadBoard() {
+  try {
+    const r = await fetch('/api/board');
+    const d = await r.json();
+    document.getElementById('bd-btn-gpio').value          = d.btn_gpio;
+    document.getElementById('bd-led-type').value          = d.led_type;
+    document.getElementById('bd-rgb-gpio').value          = d.rgb_gpio;
+    document.getElementById('bd-rgb-brightness').value    = d.rgb_brightness;
+    document.getElementById('bd-rgb-brightness-val').textContent = d.rgb_brightness + '%';
+    document.getElementById('bd-simple-gpio').value       = d.simple_gpio < 0 ? 0 : d.simple_gpio;
+    document.getElementById('bd-simple-active-high').checked = d.simple_active_high;
+    boardLedTypeChanged();
+  } catch(e) { document.getElementById('bd-msg').textContent = 'Error: ' + e; }
+}
+
+function boardLedTypeChanged() {
+  const t = parseInt(document.getElementById('bd-led-type').value, 10);
+  document.getElementById('bd-rgb-section').style.display    = t === 1 ? 'block' : 'none';
+  document.getElementById('bd-simple-section').style.display = t === 2 ? 'block' : 'none';
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  const slider = document.getElementById('bd-rgb-brightness');
+  if (slider) slider.oninput = () => {
+    document.getElementById('bd-rgb-brightness-val').textContent = slider.value + '%';
+  };
+});
+
+async function saveBoard() {
+  const msg = document.getElementById('bd-msg');
+  const ledType = parseInt(document.getElementById('bd-led-type').value, 10);
+  const simpleGpio = parseInt(document.getElementById('bd-simple-gpio').value, 10);
+  const payload = {
+    btn_gpio:           parseInt(document.getElementById('bd-btn-gpio').value, 10),
+    led_type:           ledType,
+    rgb_gpio:           parseInt(document.getElementById('bd-rgb-gpio').value, 10),
+    rgb_brightness:     parseInt(document.getElementById('bd-rgb-brightness').value, 10),
+    simple_gpio:        ledType === 2 ? simpleGpio : -1,
+    simple_active_high: document.getElementById('bd-simple-active-high').checked,
+  };
+  try {
+    const r = await fetch('/api/board', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(payload) });
+    msg.style.color = r.ok ? '#4caf50' : '#f44336';
+    msg.textContent = r.ok ? 'Saved. Reboot to apply.' : 'Error saving settings.';
+  } catch(e) { msg.style.color = 'var(--red)'; msg.textContent = 'Error: ' + e; }
 }
 
 // ── Jiggler ───────────────────────────────────────────────────────────────────

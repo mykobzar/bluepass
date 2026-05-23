@@ -10,9 +10,11 @@
 #define NS_HOTKEYS "hotkeys"
 #define NS_JIGGLER "jiggler"
 #define NS_BLE     "ble"
+#define NS_BOARD   "board"
 #define KEY_WIFI_CREDS   "creds"
 #define KEY_JIG_CFG      "cfg"
 #define KEY_BLE_PEER     "peer"
+#define KEY_BOARD_CFG    "cfg"
 
 esp_err_t storage_init(void)
 {
@@ -163,6 +165,40 @@ esp_err_t storage_clear_ble_peer(void)
     ESP_RETURN_ON_ERROR(nvs_open(NS_BLE, NVS_READWRITE, &h), TAG, "open failed");
     esp_err_t err = nvs_erase_key(h, KEY_BLE_PEER);
     if (err == ESP_ERR_NVS_NOT_FOUND) err = ESP_OK;
+    if (err == ESP_OK) err = nvs_commit(h);
+    nvs_close(h);
+    return err;
+}
+
+static void board_config_defaults(board_config_t *cfg)
+{
+    cfg->btn_gpio          = 0;
+    cfg->led_type          = BOARD_LED_TYPE_RGB;
+    cfg->rgb_gpio          = 48;
+    cfg->rgb_brightness    = 4;
+    cfg->simple_gpio       = -1;
+    cfg->simple_active_high = 1;
+}
+
+esp_err_t storage_get_board_config(board_config_t *out)
+{
+    board_config_defaults(out);
+    nvs_handle_t h;
+    esp_err_t err = nvs_open(NS_BOARD, NVS_READONLY, &h);
+    if (err != ESP_OK) return ESP_OK;  // no saved config — return defaults
+    size_t len = sizeof(*out);
+    board_config_t tmp;
+    if (nvs_get_blob(h, KEY_BOARD_CFG, &tmp, &len) == ESP_OK)
+        *out = tmp;
+    nvs_close(h);
+    return ESP_OK;
+}
+
+esp_err_t storage_set_board_config(const board_config_t *cfg)
+{
+    nvs_handle_t h;
+    ESP_RETURN_ON_ERROR(nvs_open(NS_BOARD, NVS_READWRITE, &h), TAG, "open failed");
+    esp_err_t err = nvs_set_blob(h, KEY_BOARD_CFG, cfg, sizeof(*cfg));
     if (err == ESP_OK) err = nvs_commit(h);
     nvs_close(h);
     return err;

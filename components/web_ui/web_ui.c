@@ -545,6 +545,49 @@ static esp_err_t handler_security_release(httpd_req_t *req)
     return send_ok(req);
 }
 
+// ── Board config ──────────────────────────────────────────────────────────────
+
+static esp_err_t handler_board_get(httpd_req_t *req)
+{
+    board_config_t cfg;
+    storage_get_board_config(&cfg);
+    cJSON *obj = cJSON_CreateObject();
+    cJSON_AddNumberToObject(obj, "btn_gpio",           cfg.btn_gpio);
+    cJSON_AddNumberToObject(obj, "led_type",           cfg.led_type);
+    cJSON_AddNumberToObject(obj, "rgb_gpio",           cfg.rgb_gpio);
+    cJSON_AddNumberToObject(obj, "rgb_brightness",     cfg.rgb_brightness);
+    cJSON_AddNumberToObject(obj, "simple_gpio",        cfg.simple_gpio);
+    cJSON_AddBoolToObject  (obj, "simple_active_high", cfg.simple_active_high);
+    send_json(req, obj);
+    cJSON_Delete(obj);
+    return ESP_OK;
+}
+
+static esp_err_t handler_board_set(httpd_req_t *req)
+{
+    char buf[256];
+    int len = httpd_req_recv(req, buf, sizeof(buf) - 1);
+    if (len <= 0) { httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "no body"); return ESP_FAIL; }
+    buf[len] = '\0';
+    cJSON *j = cJSON_Parse(buf);
+    if (!j) { httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "bad JSON"); return ESP_FAIL; }
+
+    board_config_t cfg;
+    storage_get_board_config(&cfg);
+
+    cJSON *v;
+    if ((v = cJSON_GetObjectItem(j, "btn_gpio"))           && cJSON_IsNumber(v)) cfg.btn_gpio           = (int32_t)v->valuedouble;
+    if ((v = cJSON_GetObjectItem(j, "led_type"))           && cJSON_IsNumber(v)) cfg.led_type           = (uint8_t)v->valuedouble;
+    if ((v = cJSON_GetObjectItem(j, "rgb_gpio"))           && cJSON_IsNumber(v)) cfg.rgb_gpio           = (int32_t)v->valuedouble;
+    if ((v = cJSON_GetObjectItem(j, "rgb_brightness"))     && cJSON_IsNumber(v)) cfg.rgb_brightness     = (uint8_t)v->valuedouble;
+    if ((v = cJSON_GetObjectItem(j, "simple_gpio"))        && cJSON_IsNumber(v)) cfg.simple_gpio        = (int32_t)v->valuedouble;
+    if ((v = cJSON_GetObjectItem(j, "simple_active_high")) && cJSON_IsBool(v))   cfg.simple_active_high = cJSON_IsTrue(v) ? 1 : 0;
+
+    cJSON_Delete(j);
+    storage_set_board_config(&cfg);
+    return send_ok(req);
+}
+
 // ── Logout ────────────────────────────────────────────────────────────────────
 // POST /api/logout — send response first, then stop the web server via a task
 
@@ -886,7 +929,7 @@ esp_err_t web_ui_start(void)
 
     httpd_config_t cfg = HTTPD_DEFAULT_CONFIG();
     cfg.uri_match_fn     = httpd_uri_match_wildcard;
-    cfg.max_uri_handlers = 24;
+    cfg.max_uri_handlers = 28;
     cfg.stack_size        = 8192;   // default 4096 overflows during OTA (buf[1024] + flash writes)
     cfg.recv_wait_timeout = 30;     // seconds; default 5 is too short for ~1.3 MB upload over WiFi
     cfg.send_wait_timeout = 30;
@@ -917,6 +960,8 @@ esp_err_t web_ui_start(void)
         { .uri = "/api/version",           .method = HTTP_GET,  .handler = handler_version_get },
         { .uri = "/api/security",          .method = HTTP_GET,  .handler = handler_security_get },
         { .uri = "/api/security/release",  .method = HTTP_POST, .handler = handler_security_release },
+        { .uri = "/api/board",             .method = HTTP_GET,  .handler = handler_board_get },
+        { .uri = "/api/board",             .method = HTTP_POST, .handler = handler_board_set },
         { .uri = "/api/logout",            .method = HTTP_POST, .handler = handler_logout },
     };
     for (size_t i = 0; i < sizeof(routes) / sizeof(routes[0]); i++) {

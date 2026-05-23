@@ -8,6 +8,7 @@
 #include "esp_sntp.h"
 #include "esp_timer.h"
 #include "led_strip.h"
+#include "driver/gpio.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/event_groups.h"
 #include <string.h>
@@ -16,7 +17,6 @@
 
 #define AP_SSID  "bluepass"
 #define AP_PASS  ""                 // open AP for initial setup
-#define LED_GPIO GPIO_NUM_48        // WS2812 RGB LED on ESP32-S3 SuperMini
 
 #define WIFI_CONNECTED_BIT BIT0
 #define WIFI_FAIL_BIT      BIT1
@@ -28,22 +28,39 @@
 #define LED_JIG_OFF_US (2800 * 1000)  // 2.8 s dark                  (jiggler off-phase, 3 s cycle)
 #define LED_PULSE_US   (150 * 1000)   // 150 ms one-shot pulse        (substitution)
 
-// RGB colours — 1/4 brightness
-#define RED_R    9
-#define RED_G    0
-#define RED_B    0
+// Full-scale RGB colours scaled by brightness at runtime
+#define RED_R_F    255
+#define RED_G_F    0
+#define RED_B_F    0
 
-#define GREEN_R  0
-#define GREEN_G  9
-#define GREEN_B  0
+#define GREEN_R_F  0
+#define GREEN_G_F  255
+#define GREEN_B_F  0
 
-#define BLUE_R   0
-#define BLUE_G   0
-#define BLUE_B   9
+#define BLUE_R_F   0
+#define BLUE_G_F   0
+#define BLUE_B_F   255
 
-#define WHITE_R  5
-#define WHITE_G  5
-#define WHITE_B  5
+#define WHITE_R_F  255
+#define WHITE_G_F  255
+#define WHITE_B_F  255
+
+static uint8_t s_brightness = 4;  // 1-100 %
+
+static uint8_t scale(uint8_t v) { return (uint8_t)((uint32_t)v * s_brightness / 100); }
+
+#define RED_R    scale(RED_R_F)
+#define RED_G    scale(RED_G_F)
+#define RED_B    scale(RED_B_F)
+#define GREEN_R  scale(GREEN_R_F)
+#define GREEN_G  scale(GREEN_G_F)
+#define GREEN_B  scale(GREEN_B_F)
+#define BLUE_R   scale(BLUE_R_F)
+#define BLUE_G   scale(BLUE_G_F)
+#define BLUE_B   scale(BLUE_B_F)
+#define WHITE_R  scale(WHITE_R_F)
+#define WHITE_G  scale(WHITE_G_F)
+#define WHITE_B  scale(WHITE_B_F)
 
 static EventGroupHandle_t s_wifi_events;
 static int s_retry_count;
@@ -54,6 +71,11 @@ static void *s_state_cb_ctx;
 static esp_timer_handle_t s_led_timer;    // periodic blink
 static esp_timer_handle_t s_pulse_timer;  // one-shot substitution pulse
 static led_strip_handle_t s_led_strip;
+
+// Simple LED state
+static board_led_type_t s_led_type = BOARD_LED_TYPE_RGB;
+static gpio_num_t       s_simple_gpio = GPIO_NUM_NC;
+static bool             s_simple_active_high = true;
 
 static bool    s_led_on;
 static uint8_t s_blink_r, s_blink_g, s_blink_b;
@@ -67,12 +89,17 @@ static bool s_sntp_started = false;
 
 static void led_set(uint8_t r, uint8_t g, uint8_t b)
 {
-    if (!s_led_strip) return;
-    if (r == 0 && g == 0 && b == 0) {
-        led_strip_clear(s_led_strip);
-    } else {
-        led_strip_set_pixel(s_led_strip, 0, r, g, b);
-        led_strip_refresh(s_led_strip);
+    if (s_led_type == BOARD_LED_TYPE_RGB) {
+        if (!s_led_strip) return;
+        if (r == 0 && g == 0 && b == 0) {
+            led_strip_clear(s_led_strip);
+        } else {
+            led_strip_set_pixel(s_led_strip, 0, r, g, b);
+            led_strip_refresh(s_led_strip);
+        }
+    } else if (s_led_type == BOARD_LED_TYPE_SIMPLE && s_simple_gpio != GPIO_NUM_NC) {
+        bool on = (r != 0 || g != 0 || b != 0);
+        gpio_set_level(s_simple_gpio, on == s_simple_active_high ? 1 : 0);
     }
 }
 
@@ -183,23 +210,43 @@ esp_err_t wifi_manager_init(void)
 {
     s_wifi_events = xEventGroupCreate();
 
-    // WS2812 RGB LED via RMT
-    led_strip_config_t strip_cfg = {
-        .strip_gpio_num = LED_GPIO,
-        .max_leds       = 1,
-        .led_model      = LED_MODEL_WS2812,
-        .flags.invert_out = false,
-    };
-    led_strip_rmt_config_t rmt_cfg = {
-        .clk_src       = RMT_CLK_SRC_DEFAULT,
-        .resolution_hz = 10 * 1000 * 1000,  // 10 MHz
-    };
-    esp_err_t strip_err = led_strip_new_rmt_device(&strip_cfg, &rmt_cfg, &s_led_strip);
-    if (strip_err != ESP_OK) {
-        ESP_LOGE(TAG, "LED strip init failed: %s", esp_err_to_name(strip_err));
-        s_led_strip = NULL;
-    } else {
-        led_strip_clear(s_led_strip);
+    // Load board config and init LED
+    board_config_t board;
+    storage_get_board_config(&board);
+    s_led_type         = (board_led_type_t)board.led_type;
+    s_brightness       = (board.rgb_brightness > 0 && board.rgb_brightness <= 100)
+                         ? board.rgb_brightness : 4;
+    s_simple_gpio      = (board.simple_gpio >= 0) ? (gpio_num_t)board.simple_gpio : GPIO_NUM_NC;
+    s_simple_active_high = board.simple_active_high;
+
+    if (s_led_type == BOARD_LED_TYPE_RGB) {
+        led_strip_config_t strip_cfg = {
+            .strip_gpio_num = (int)board.rgb_gpio,
+            .max_leds       = 1,
+            .led_model      = LED_MODEL_WS2812,
+            .flags.invert_out = false,
+        };
+        led_strip_rmt_config_t rmt_cfg = {
+            .clk_src       = RMT_CLK_SRC_DEFAULT,
+            .resolution_hz = 10 * 1000 * 1000,
+        };
+        esp_err_t strip_err = led_strip_new_rmt_device(&strip_cfg, &rmt_cfg, &s_led_strip);
+        if (strip_err != ESP_OK) {
+            ESP_LOGE(TAG, "LED strip init failed: %s", esp_err_to_name(strip_err));
+            s_led_strip = NULL;
+        } else {
+            led_strip_clear(s_led_strip);
+        }
+    } else if (s_led_type == BOARD_LED_TYPE_SIMPLE && s_simple_gpio != GPIO_NUM_NC) {
+        gpio_config_t io = {
+            .pin_bit_mask = 1ULL << s_simple_gpio,
+            .mode         = GPIO_MODE_OUTPUT,
+            .pull_up_en   = GPIO_PULLUP_DISABLE,
+            .pull_down_en = GPIO_PULLDOWN_DISABLE,
+            .intr_type    = GPIO_INTR_DISABLE,
+        };
+        gpio_config(&io);
+        gpio_set_level(s_simple_gpio, s_simple_active_high ? 0 : 1);  // off
     }
 
     ESP_ERROR_CHECK(esp_netif_init());
