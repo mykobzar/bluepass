@@ -401,6 +401,30 @@
     </tbody>
   </table>
 
+  <div id="sec-enable-section" style="display:none">
+    <div style="background:var(--bg2);border:1px solid var(--border);border-radius:4px;padding:0.9rem;margin-bottom:0.9rem;font-size:0.87rem">
+      <div style="font-weight:bold;margin-bottom:0.5rem;color:var(--text)">How to enable flash encryption</div>
+      <div style="color:var(--dim);line-height:1.65">
+        Encryption is enabled by the <b style="color:var(--text)">bootloader</b> on first boot — the web UI cannot do this directly.<br>
+        Flash the device once via USB with all four firmware files. The bootloader will generate the encryption key,
+        burn it into eFuse, encrypt the flash, and reboot into <b style="color:#ff8c00">Development mode</b> automatically.<br><br>
+        After that, you can optionally switch to Release mode from this tab.
+      </div>
+      <div style="margin-top:0.8rem">
+        <div style="color:var(--dim);font-size:0.82rem;margin-bottom:0.3rem">Flash command (Linux / macOS):</div>
+        <code style="display:block;background:#111;padding:0.5rem 0.7rem;border-radius:3px;font-size:0.8rem;line-height:1.7;color:var(--blue);white-space:pre-wrap">esptool.py --chip esp32s3 --port /dev/ttyUSB0 --baud 460800 write_flash \
+  --flash_mode dio --flash_freq 80m --flash_size 4MB \
+  0x0     bootloader-0.9.11.bin \
+  0x8000  partition-table-0.9.11.bin \
+  0x10000 ota_data_initial-0.9.11.bin \
+  0x20000 bluepass-0.9.11.bin</code>
+        <div style="color:var(--dim);font-size:0.82rem;margin-top:0.5rem">
+          Binaries: <a href="https://github.com/mykobzar/bluepass/releases/latest" target="_blank">github.com/mykobzar/bluepass/releases/latest</a>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <div id="sec-release-section" style="display:none">
     <div style="background:#1a0000;border:1px solid #880000;padding:0.9rem;border-radius:4px;margin-bottom:0.9rem">
       <div style="color:#ff4444;font-weight:bold;font-size:0.95rem;margin-bottom:0.6rem">&#9888;&#xFE0E; Irreversible action — read before proceeding</div>
@@ -959,9 +983,12 @@ function cancelEdit(tabName) {
 // ── Security ──────────────────────────────────────────────────────────────────
 async function loadSecurity() {
   const statusEl  = document.getElementById('sec-status');
-  const sectionEl = document.getElementById('sec-release-section');
+  const enableEl  = document.getElementById('sec-enable-section');
+  const releaseEl = document.getElementById('sec-release-section');
   const msgEl     = document.getElementById('sec-msg');
   msgEl.textContent = '';
+  enableEl.style.display  = 'none';
+  releaseEl.style.display = 'none';
   try {
     const r = await fetch('/api/security');
     const d = await r.json();
@@ -970,9 +997,8 @@ async function loadSecurity() {
         statusEl.innerHTML =
           '<span style="color:#c55;font-weight:bold">&#9888;&#xFE0E; Flash encryption: DISABLED</span><br>' +
           '<span style="color:#ddb8b8;font-size:0.87rem">All data is stored in plaintext on the flash chip.<br>' +
-          'Passwords, TOTP secrets and settings are readable by anyone with physical access to the device.<br>' +
-          '<span style="color:var(--dim)">To enable encryption, rebuild firmware with <code>CONFIG_SECURE_FLASH_ENC_ENABLED=y</code>.</span></span>';
-        sectionEl.style.display = 'none';
+          'Passwords, TOTP secrets and settings are readable by anyone with physical access to the device.</span>';
+        enableEl.style.display = 'block';
         break;
       case 'development':
         statusEl.innerHTML =
@@ -980,7 +1006,7 @@ async function loadSecurity() {
           '<span style="color:var(--dim);font-size:0.87rem">Data is encrypted (AES-XTS). Key is stored in eFuse.<br>' +
           'UART flashing and JTAG are still allowed — protection is partial.<br>' +
           'Switch to Release mode below for full protection.</span>';
-        sectionEl.style.display = 'block';
+        releaseEl.style.display = 'block';
         document.getElementById('sec-release-btn').disabled = false;
         break;
       case 'release':
@@ -988,7 +1014,6 @@ async function loadSecurity() {
           '<span style="color:#4caf50;font-weight:bold">&#10003; Flash encryption: Release mode (fully secured)</span><br>' +
           '<span style="color:var(--dim);font-size:0.87rem">AES-XTS active. Key locked in eFuse.<br>' +
           'UART flashing and JTAG are permanently disabled. Updates only via OTA.</span>';
-        sectionEl.style.display = 'none';
         break;
     }
   } catch (_) {
