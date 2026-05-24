@@ -1,6 +1,6 @@
 # bluepass
 
-> Hardware Bluetooth → USB HID bridge with password injection, TOTP codes and jiggler — firmware for ESP32-S3.
+> Hardware Bluetooth → USB HID bridge with password injection, authenticator app codes and jiggler — firmware for ESP32-S3.
 
 ![Version](https://img.shields.io/badge/version-1.0.0-blue)
 ![ESP-IDF](https://img.shields.io/badge/ESP--IDF-v5.2%2B-blue)
@@ -15,13 +15,13 @@
 
 bluepass is a small hardware device that sits between a Bluetooth keyboard and a laptop. It forwards all keystrokes transparently — the laptop sees a standard USB HID keyboard and never knows there is anything in between.
 
-The interesting part is what happens to *certain* key combinations. You assign hotkeys to stored secrets: a password, a TOTP code, or a block of text. When you press the hotkey on your Bluetooth keyboard, bluepass intercepts it and types the secret on the laptop character by character, over USB, without ever exposing it to software on the host.
+The interesting part is what happens to *certain* key combinations. You assign hotkeys to stored secrets: a password, a one-time code from your authenticator app, or a block of text. When you press the hotkey on your Bluetooth keyboard, bluepass intercepts it and types the secret on the laptop character by character, over USB, without ever exposing it to software on the host.
 
 There is no driver, no browser extension, and no software to install. The secrets live in the device flash, encrypted at rest. The web management interface is hosted locally on the device and is **never reachable without a deliberate button press** — it activates on demand and shuts itself off after five minutes of inactivity.
 
 ### What problem does it solve?
 
-Password managers and TOTP apps require software on the host. On locked-down corporate machines, kiosks, remote-desktop sessions, or shared workstations you often cannot install anything. bluepass requires nothing from the host — it looks like a USB keyboard.
+Password managers and authenticator apps require software on the host. On locked-down corporate machines, kiosks, remote-desktop sessions, or shared workstations you often cannot install anything. bluepass requires nothing from the host — it looks like a USB keyboard.
 
 It also means your secrets are never typed by software on the host. A keylogger on the host sees keystrokes but has no way to distinguish a real keystroke from a substituted one, and the source of the secret never touches host memory.
 
@@ -39,7 +39,7 @@ All keystrokes pass through transparently. Configured hotkey combinations are in
 |---|---|
 | **Password** | Stored secret typed as keystrokes; never exposed over the API |
 | **Text** | Arbitrary string, including characters the physical keyboard cannot produce |
-| **TOTP code** | Live 6-digit code (RFC 6238 / Google Authenticator) |
+| **Authenticator code** | Live 6-digit one-time code — works with Google Authenticator, Microsoft Authenticator, Authy, Apple Passwords, and any TOTP-compatible app |
 | **Jiggler** | Toggles periodic keypresses to prevent the laptop from sleeping |
 
 The web interface is available over WiFi and **only after an explicit button press** — it is never exposed on boot.
@@ -313,7 +313,7 @@ The web interface **turns off automatically after 5 minutes of inactivity** (no 
 | **Info** | WiFi and Bluetooth connection status with signal strength; live key log |
 | **Text** | Hotkey → arbitrary text substitution |
 | **Passwords** | Hotkey → password (masked in the UI, never returned by the API) |
-| **TOTP** | Hotkey → TOTP code; shows device clock sync status |
+| **TOTP** | Hotkey → authenticator app code; shows device clock sync status |
 | **Jiggler** | Jiggler interval, key code, enable/disable hotkeys |
 | **List** | Full HID keycode reference (keyboard + Consumer Control) |
 | **Bluetooth** | Scan, pair, disconnect; BLE diagnostic log |
@@ -337,16 +337,18 @@ Assign a hotkey to a stored password. When the hotkey is pressed on the Bluetoot
 
 Same as passwords but the stored text is visible in the UI. Supports any printable ASCII character and newline. Useful for text snippets, signatures, or characters the physical keyboard layout cannot produce.
 
-### TOTP codes
+### Authenticator app codes
 
-Assign a hotkey to a TOTP service secret (base32). Pressing the hotkey types the current 6-digit code.
+bluepass generates standard TOTP codes (RFC 6238) — the same algorithm used by Google Authenticator, Microsoft Authenticator, Authy, Apple Passwords (iOS 17+ / macOS Sonoma), Bitwarden, 1Password, and any other TOTP-compatible app. If a service offers a QR code for "Google Authenticator", it works with bluepass.
+
+Assign a hotkey to a service secret (base32 string). Pressing the hotkey types the current 6-digit code directly as keystrokes, without any software on the host.
 
 **Requirements:**
 - The device must be connected to WiFi.
 - The system clock must be synchronised with NTP. The **TOTP** tab shows the sync status (`Device: synced Δ±Xs`). Codes are not generated if the clock is not synced.
 
 **Import from Google Authenticator:**  
-The TOTP tab includes an importer for `otpauth-migration://offline?data=…` links exported by the Google Authenticator app.
+The TOTP tab includes an importer for `otpauth-migration://offline?data=…` links exported by the Google Authenticator app. Secrets from other apps can be entered manually as a base32 string.
 
 ### Jiggler
 
