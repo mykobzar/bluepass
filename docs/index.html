@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Bluepass — Web Installer</title>
+  <script type="module" src="https://unpkg.com/esp-web-tools@10/dist/web/install-button.js"></script>
+  <style>
+    :root {
+      --bg:        #1a1a1a;
+      --card:      #242424;
+      --card2:     #2a2a2a;
+      --border:    #383838;
+      --text:      #e8e8e8;
+      --dim:       #888;
+      --blue:      #4fc3f7;
+      --blue-btn:  #0288d1;
+      --blue-dark: #01579b;
+      --blue-bg:   #0d2137;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 2rem 1rem;
+      gap: 2.5rem;
+    }
+
+    /* ── Hero ── */
+    .hero { text-align: center; }
+
+    .hero-title {
+      font-size: 2.6rem;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      color: var(--blue);
+    }
+
+    .hero-sub {
+      margin-top: 0.5rem;
+      color: var(--dim);
+      font-size: 0.95rem;
+      letter-spacing: 0.02em;
+    }
+
+    /* ── Install card ── */
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 2rem;
+      width: 100%;
+      max-width: 420px;
+      text-align: center;
+    }
+
+    .badge-row {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.5rem;
+      margin-bottom: 1.75rem;
+    }
+
+    .badge {
+      display: inline-block;
+      font-size: 0.72rem;
+      font-family: monospace;
+      letter-spacing: 0.06em;
+      color: var(--dim);
+      background: var(--card2);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 0.2rem 0.55rem;
+    }
+
+    .badge.version { color: var(--blue); border-color: var(--blue-dark); background: var(--blue-bg); }
+
+    /* ── Install button ── */
+    esp-web-install-button { display: block; }
+
+    .install-btn {
+      display: block;
+      width: 100%;
+      padding: 0.9rem 1rem;
+      background: var(--blue-btn);
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+      font-size: 1rem;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      cursor: pointer;
+      transition: background 0.15s, transform 0.1s;
+      text-align: center;
+    }
+    .install-btn:hover  { background: #0277bd; }
+    .install-btn:active { background: var(--blue-dark); transform: scale(0.99); }
+    .install-btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+
+    .browser-note {
+      margin-top: 0.85rem;
+      font-size: 0.78rem;
+      color: var(--dim);
+      line-height: 1.6;
+    }
+    .browser-note a { color: var(--blue); text-decoration: none; }
+    .browser-note a:hover { text-decoration: underline; }
+
+    /* ── Separator ── */
+    .sep {
+      width: 100%;
+      max-width: 420px;
+      border: none;
+      border-top: 1px solid var(--border);
+    }
+
+    /* ── After-flashing steps ── */
+    .steps { width: 100%; max-width: 420px; }
+
+    .steps-title {
+      font-size: 0.72rem;
+      font-weight: 600;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--dim);
+      margin-bottom: 1rem;
+    }
+
+    .step {
+      display: flex;
+      gap: 0.9rem;
+      padding: 0.7rem 0;
+      border-top: 1px solid var(--border);
+      align-items: flex-start;
+    }
+    .step:last-child { border-bottom: 1px solid var(--border); }
+
+    .step-n {
+      flex-shrink: 0;
+      width: 1.45rem;
+      height: 1.45rem;
+      border-radius: 50%;
+      background: var(--blue-bg);
+      border: 1px solid var(--blue-dark);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.72rem;
+      font-weight: 700;
+      color: var(--blue);
+      margin-top: 0.1rem;
+    }
+
+    .step-body { font-size: 0.88rem; line-height: 1.55; color: var(--text); }
+    .step-body code {
+      font-family: monospace;
+      font-size: 0.85em;
+      color: var(--blue);
+      background: var(--blue-bg);
+      padding: 0.05em 0.3em;
+      border-radius: 3px;
+    }
+
+    /* ── Footer ── */
+    footer {
+      font-size: 0.8rem;
+      color: var(--dim);
+      text-align: center;
+      padding-bottom: 0.5rem;
+    }
+    footer a { color: var(--dim); text-decoration: none; transition: color 0.15s; }
+    footer a:hover { color: var(--blue); }
+    footer .dot { margin: 0 0.5rem; }
+  </style>
+</head>
+<body>
+
+  <div class="hero">
+    <div class="hero-title">bluepass</div>
+    <div class="hero-sub">Bluetooth → USB HID bridge for ESP32-S3</div>
+  </div>
+
+  <div class="card">
+    <div class="badge-row">
+      <span class="badge">ESP32-S3</span>
+      <span class="badge version">v1.0.0</span>
+    </div>
+
+    <esp-web-install-button manifest="manifest.json">
+
+      <button slot="activate" class="install-btn">Connect &amp; Install</button>
+
+      <span slot="unsupported">
+        <button class="install-btn" disabled>Connect &amp; Install</button>
+        <p class="browser-note">
+          Web installer requires <strong style="color:var(--text)">Chrome</strong> or
+          <strong style="color:var(--text)">Edge</strong> (Web Serial API).<br>
+          <a href="https://github.com/mykobzar/bluepass/releases/latest">Download firmware</a>
+          for manual flashing via <code style="color:var(--blue)">esptool.py</code>.
+        </p>
+      </span>
+
+      <span slot="not-allowed">
+        <button class="install-btn" disabled>Connect &amp; Install</button>
+        <p class="browser-note">
+          HTTPS is required to use the web installer.<br>
+          <a href="https://mykobzar.github.io/bluepass/">Open the secure version</a> or
+          <a href="https://github.com/mykobzar/bluepass/releases/latest">download firmware</a>.
+        </p>
+      </span>
+
+    </esp-web-install-button>
+
+    <p class="browser-note" id="serial-note">
+      Requires Chrome or Edge &nbsp;·&nbsp; Web Serial API
+    </p>
+  </div>
+
+  <hr class="sep">
+
+  <div class="steps">
+    <div class="steps-title">After flashing</div>
+
+    <div class="step">
+      <div class="step-n">1</div>
+      <div class="step-body">
+        Device boots as WiFi access point <code>bluepass</code> (open network)
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-n">2</div>
+      <div class="step-body">
+        Connect to it and open <code>http://192.168.4.1</code>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-n">3</div>
+      <div class="step-body">
+        Enter your WiFi credentials → <strong>Save &amp; Reboot</strong>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-n">4</div>
+      <div class="step-body">
+        Short-press <code>GPIO0</code> on the device to activate the web UI on your local network
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-n">5</div>
+      <div class="step-body">
+        Go to <strong>Settings → Board</strong> to configure the correct button and LED pins
+        for your specific ESP32-S3 board
+      </div>
+    </div>
+
+  </div>
+
+  <footer>
+    <a href="https://github.com/mykobzar/bluepass">GitHub</a>
+    <span class="dot">·</span>
+    <a href="https://github.com/mykobzar/bluepass/releases">Releases</a>
+    <span class="dot">·</span>
+    <a href="https://github.com/mykobzar/bluepass/blob/main/README.md">Docs</a>
+    <span class="dot">·</span>
+    <a href="https://github.com/mykobzar/bluepass/tree/main/firmware">Manual flash</a>
+  </footer>
+
+  <script>
+    if ('serial' in navigator) {
+      document.getElementById('serial-note').style.display = 'none';
+    }
+  </script>
+
+</body>
+</html>

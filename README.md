@@ -2,10 +2,12 @@
 
 > Hardware Bluetooth → USB HID bridge with password injection, TOTP codes and jiggler — firmware for ESP32-S3.
 
-![Version](https://img.shields.io/badge/version-0.9.14-blue)
+![Version](https://img.shields.io/badge/version-1.0.0-blue)
 ![ESP-IDF](https://img.shields.io/badge/ESP--IDF-v5.2%2B-blue)
 ![Target](https://img.shields.io/badge/target-ESP32--S3-informational)
 ![License](https://img.shields.io/badge/license-MIT-green)
+
+**[⚡ Install in browser](https://mykobzar.github.io/bluepass/)** — no toolchain needed, Chrome/Edge only
 
 ---
 

@@ -1,0 +1,16 @@
+{
+  "name": "Bluepass",
+  "version": "1.0.0",
+  "new_install_prompt_erase": true,
+  "builds": [
+    {
+      "chipFamily": "ESP32-S3",
+      "parts": [
+        { "path": "https://raw.githubusercontent.com/mykobzar/bluepass/main/firmware/bootloader-1.0.0.bin",         "offset": 0 },
+        { "path": "https://raw.githubusercontent.com/mykobzar/bluepass/main/firmware/partition-table-1.0.0.bin",    "offset": 32768 },
+        { "path": "https://raw.githubusercontent.com/mykobzar/bluepass/main/firmware/ota_data_initial-1.0.0.bin",   "offset": 65536 },
+        { "path": "https://raw.githubusercontent.com/mykobzar/bluepass/main/firmware/bluepass-1.0.0.bin",           "offset": 131072 }
+      ]
+    }
+  ]
+}
