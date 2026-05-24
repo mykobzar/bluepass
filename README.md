@@ -106,33 +106,51 @@ The ESP32-S3 native USB OTG port is used as the HID output. The same port is use
 
 ---
 
-## Quick start — flash pre-built firmware
+## Install
 
-A ready-to-flash binary is included in the [`firmware/`](firmware/) folder.  
-No toolchain needed — only `esptool.py`:
+### Recommended — web installer
+
+1. Connect the ESP32-S3 board to your computer via USB-C.
+2. Open **[https://mykobzar.github.io/bluepass/](https://mykobzar.github.io/bluepass/)** in Chrome or Edge.
+3. Click **Connect & Install** and select the serial port when prompted.
+
+The firmware is downloaded and flashed automatically — no Python, no toolchain, nothing to install.
+
+> **Browser:** Chrome or Edge required (Web Serial API). Firefox and Safari are not supported.  
+> **Device not detected?** Hold the **BOOT (GPIO0)** button on the board, plug in USB, then release — this forces the ROM bootloader and makes the port appear.
+
+After flashing, proceed to [First-time setup](#first-time-setup).
+
+---
+
+### Advanced — esptool.py
+
+Use this if the web installer is not available (corporate firewall, unsupported browser, offline environment).
+
+Pre-built binaries are in the [`firmware/`](firmware/) folder. Install the flash tool:
 
 ```bash
 pip install esptool
 ```
 
-Then flash (replace the port with yours):
+Flash (replace the port with yours):
 
 ```bash
 # Linux / macOS
 esptool.py --chip esp32s3 --port /dev/ttyUSB0 --baud 460800 write_flash \
   --flash_mode dio --flash_freq 80m --flash_size 4MB \
-  0x0     firmware/bootloader-0.9.14.bin \
-  0x8000  firmware/partition-table-0.9.14.bin \
-  0x10000 firmware/ota_data_initial-0.9.14.bin \
-  0x20000 firmware/bluepass-0.9.14.bin
+  0x0     firmware/bootloader-1.0.0.bin \
+  0x8000  firmware/partition-table-1.0.0.bin \
+  0x10000 firmware/ota_data_initial-1.0.0.bin \
+  0x20000 firmware/bluepass-1.0.0.bin
 
 # Windows — use COM3, COM4, etc.
 esptool.py --chip esp32s3 --port COM3 --baud 460800 write_flash ^
   --flash_mode dio --flash_freq 80m --flash_size 4MB ^
-  0x0     firmware\bootloader-0.9.14.bin ^
-  0x8000  firmware\partition-table-0.9.14.bin ^
-  0x10000 firmware\ota_data_initial-0.9.14.bin ^
-  0x20000 firmware\bluepass-0.9.14.bin
+  0x0     firmware\bootloader-1.0.0.bin ^
+  0x8000  firmware\partition-table-1.0.0.bin ^
+  0x10000 firmware\ota_data_initial-1.0.0.bin ^
+  0x20000 firmware\bluepass-1.0.0.bin
 ```
 
 > **Windows GUI option:** see [`firmware/README.md`](firmware/README.md) for step-by-step instructions using the Espressif Flash Download Tool (no Python required).
@@ -141,9 +159,11 @@ After flashing, proceed to [First-time setup](#first-time-setup).
 
 ---
 
-## Building and flashing
+### Advanced — build from source
 
-### 1. Install ESP-IDF
+Use this if you want to modify the firmware or contribute to the project.
+
+#### 1. Install ESP-IDF
 
 Minimum version: **v5.2**. Full instructions: <https://docs.espressif.com/projects/esp-idf/en/stable/esp32s3/get-started/>
 
@@ -153,14 +173,14 @@ git clone --recursive https://github.com/espressif/esp-idf.git
 cd esp-idf && ./install.sh esp32s3
 ```
 
-### 2. Clone this repo
+#### 2. Clone this repo
 
 ```bash
-git clone https://github.com/<your-username>/bluepass.git
+git clone https://github.com/mykobzar/bluepass.git
 cd bluepass
 ```
 
-### 3. Activate the ESP-IDF environment
+#### 3. Activate the ESP-IDF environment
 
 Run this in every new terminal session before using `idf.py`:
 
@@ -168,13 +188,13 @@ Run this in every new terminal session before using `idf.py`:
 . ~/esp/esp-idf/export.sh
 ```
 
-### 4. Set the target (once per checkout)
+#### 4. Set the target (once per checkout)
 
 ```bash
 idf.py set-target esp32s3
 ```
 
-### 5. Build
+#### 5. Build
 
 ```bash
 idf.py build
@@ -182,7 +202,7 @@ idf.py build
 
 First build: 3–7 minutes. Incremental builds: seconds.
 
-### 6. Flash
+#### 6. Flash
 
 Connect the ESP32-S3 board to your development machine via USB-C. Find the port:
 
@@ -200,9 +220,9 @@ Flash (replace the port as needed):
 idf.py -p /dev/ttyUSB0 flash
 ```
 
-> **Tip:** If the device is not detected, hold the **BOOT (GPIO0)** button, connect USB, then release — this forces the ROM bootloader.
+> **Tip:** If the device is not detected, hold the **BOOT (GPIO0)** button, connect USB, then release.
 
-### 7. Verify (optional)
+#### 7. Verify (optional)
 
 ```bash
 idf.py -p /dev/ttyUSB0 monitor
