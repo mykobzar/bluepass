@@ -10,7 +10,8 @@ After flashing, use **Settings → Board** to configure the correct GPIO pins fo
 
 | Version | Date | Notes |
 |---|---|---|
-| **0.9.14** | 2026-05-23 | Board tab: configurable button GPIO, RGB LED with brightness, simple LED support; expanded README with compatible boards |
+| **1.0.0** | 2026-05-25 | First stable release; all 0.9.x features promoted to 1.0: BT→USB bridge, passwords, TOTP, jiggler, OTA, Info/Security/Board tabs |
+| 0.9.14 | 2026-05-23 | Board tab: configurable button GPIO, RGB LED with brightness, simple LED support; expanded README with compatible boards |
 | 0.9.13 | 2026-05-23 | Info tab: rename Log→Info, add WiFi and BLE status cards with RSSI |
 | 0.9.12 | 2026-05-23 | Security tab: explain Disabled state, show UART flash instructions to enable encryption |
 | 0.9.11 | 2026-05-23 | Fix "Failed to fetch": move GitHub version check to device side (/api/ota/check) |
@@ -26,14 +27,14 @@ After flashing, use **Settings → Board** to configure the correct GPIO pins fo
 
 ---
 
-## Files — v0.9.14
+## Files — v1.0.0
 
 | File | Flash address | Description |
 |---|---|---|
-| `bootloader-0.9.14.bin` | `0x0` | Second-stage bootloader |
-| `partition-table-0.9.14.bin` | `0x8000` | Partition layout (NVS + dual OTA slots) |
-| `ota_data_initial-0.9.14.bin` | `0x10000` | OTA slot selector (initial state) |
-| `bluepass-0.9.14.bin` | `0x20000` | Main application |
+| `bootloader-1.0.0.bin` | `0x0` | Second-stage bootloader |
+| `partition-table-1.0.0.bin` | `0x8000` | Partition layout (NVS + dual OTA slots) |
+| `ota_data_initial-1.0.0.bin` | `0x10000` | OTA slot selector (initial state) |
+| `bluepass-1.0.0.bin` | `0x20000` | Main application |
 
 All four files must be flashed together on a **blank or previously erased** device.
 
@@ -99,10 +100,10 @@ esptool.py \
   --flash_mode dio \
   --flash_freq 80m \
   --flash_size 4MB \
-  0x0     bootloader-0.9.14.bin \
-  0x8000  partition-table-0.9.14.bin \
-  0x10000 ota_data_initial-0.9.14.bin \
-  0x20000 bluepass-0.9.14.bin
+  0x0     bootloader-1.0.0.bin \
+  0x8000  partition-table-1.0.0.bin \
+  0x10000 ota_data_initial-1.0.0.bin \
+  0x20000 bluepass-1.0.0.bin
 ```
 
 Expected output:
@@ -136,10 +137,10 @@ esptool.py ^
   --flash_mode dio ^
   --flash_freq 80m ^
   --flash_size 4MB ^
-  0x0     bootloader-0.9.14.bin ^
-  0x8000  partition-table-0.9.14.bin ^
-  0x10000 ota_data_initial-0.9.14.bin ^
-  0x20000 bluepass-0.9.14.bin
+  0x0     bootloader-1.0.0.bin ^
+  0x8000  partition-table-1.0.0.bin ^
+  0x10000 ota_data_initial-1.0.0.bin ^
+  0x20000 bluepass-1.0.0.bin
 ```
 
 Replace `COM3` with your actual port number.
@@ -155,10 +156,10 @@ Replace `COM3` with your actual port number.
 
    | File | Address |
    |---|---|
-   | `bootloader-0.9.14.bin` | `0x0` |
-   | `partition-table-0.9.14.bin` | `0x8000` |
-   | `ota_data_initial-0.9.14.bin` | `0x10000` |
-   | `bluepass-0.9.14.bin` | `0x20000` |
+   | `bootloader-1.0.0.bin` | `0x0` |
+   | `partition-table-1.0.0.bin` | `0x8000` |
+   | `ota_data_initial-1.0.0.bin` | `0x10000` |
+   | `bluepass-1.0.0.bin` | `0x20000` |
 
 5. Set **COM** to your port, **BAUD** to `460800`.
 6. Set **SPI SPEED: 80 MHz**, **SPI MODE: DIO**, **FLASH SIZE: 4MB**.
