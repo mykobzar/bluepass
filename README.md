@@ -2,7 +2,7 @@
 
 > Hardware Bluetooth → USB HID bridge with password injection, authenticator app codes and jiggler — firmware for ESP32-S3.
 
-![Version](https://img.shields.io/badge/version-1.1.1--beta-blue)
+![Version](https://img.shields.io/badge/version-1.1.2-blue)
 ![ESP-IDF](https://img.shields.io/badge/ESP--IDF-v5.2%2B-blue)
 ![Target](https://img.shields.io/badge/target-ESP32--S3-informational)
 ![License](https://img.shields.io/badge/license-MIT-green)
