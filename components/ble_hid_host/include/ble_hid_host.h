@@ -38,5 +38,10 @@ void  ble_hid_host_get_peer_addr(char *buf, size_t len);
 
 void ble_hid_host_set_connection_cb(ble_connection_cb_t cb, void *ctx);
 
+// Register a callback invoked when the NimBLE host syncs (stack ready).
+// Use this to start peripheral advertising. Must be called before ble_hid_host_init().
+typedef void (*ble_sync_hook_t)(void);
+void ble_hid_host_add_sync_hook(ble_sync_hook_t fn);
+
 // Diagnostic log — returns recent BLE events as a newline-separated string
 void ble_hid_host_get_log(char *buf, size_t len);
