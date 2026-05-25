@@ -707,12 +707,13 @@ static void ota_fetch_task(void *arg)
     }
 
     esp_http_client_config_t cfg = {
-        .url                  = url,
-        .crt_bundle_attach    = esp_crt_bundle_attach,
-        .timeout_ms           = 20000,
-        .buffer_size          = 4096,
-        .buffer_size_tx       = 1024,
+        .url                   = url,
+        .crt_bundle_attach     = esp_crt_bundle_attach,
+        .timeout_ms            = 60000,
+        .buffer_size           = 4096,
+        .buffer_size_tx        = 1024,
         .max_redirection_count = 5,
+        .keep_alive_enable     = true,
     };
     esp_http_client_handle_t client = esp_http_client_init(&cfg);
 
@@ -746,9 +747,9 @@ static void ota_fetch_task(void *arg)
     }
 
     snprintf(s_ota_msg, sizeof(s_ota_msg), "Downloading...");
-    char *buf    = malloc(4096);
+    char *buf    = malloc(8192);
     int   total  = 0, n;
-    while ((n = esp_http_client_read(client, buf, 4096)) > 0) {
+    while ((n = esp_http_client_read(client, buf, 8192)) > 0) {
         err = esp_ota_write(hdl, buf, n);
         if (err != ESP_OK) break;
         total += n;
@@ -758,8 +759,14 @@ static void ota_fetch_task(void *arg)
     esp_http_client_close(client);
     esp_http_client_cleanup(client);
 
-    if (err != ESP_OK || n < 0) {
-        snprintf(s_ota_msg, sizeof(s_ota_msg), "Download error: %s", esp_err_to_name(err));
+    if (err != ESP_OK) {
+        snprintf(s_ota_msg, sizeof(s_ota_msg), "Write error: %s", esp_err_to_name(err));
+        esp_ota_abort(hdl);
+        s_ota_state = OTA_STATE_ERROR;
+        goto done;
+    }
+    if (n < 0) {
+        snprintf(s_ota_msg, sizeof(s_ota_msg), "Download failed: connection lost");
         esp_ota_abort(hdl);
         s_ota_state = OTA_STATE_ERROR;
         goto done;
