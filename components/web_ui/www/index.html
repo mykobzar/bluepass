@@ -761,13 +761,8 @@ function formatConsumer(cc) {
   return `<${n}>`;
 }
 function fmtTrigger(s) {
-  let combo = s.consumer_code ? formatConsumer(s.consumer_code)
-                              : formatCombo(s.modifiers, s.keycode);
-  const hints = [];
-  if (!s.consumer_code && s.match_mode === 1) hints.push('any-mod');
-  if (s.replace_mode === 1) hints.push('keep-mod');
-  if (hints.length) combo += ' [' + hints.join(', ') + ']';
-  return combo;
+  return s.consumer_code ? formatConsumer(s.consumer_code)
+                         : formatCombo(s.modifiers, s.keycode);
 }
 
 // Parse "<Mod>+<Key>" or "<0x15>" or "<0x00CD>" into {mod, kc, cc}
@@ -1112,22 +1107,59 @@ function slotText(s) {
   return s.payload;
 }
 
+const SEL_STYLE = 'font-size:0.76rem;padding:0.1rem 0.15rem;background:var(--bg3);color:var(--text);border:1px solid var(--border);border-radius:2px;cursor:pointer';
+
+function modeCell(s) {
+  const mm = s.match_mode   || 0;
+  const rm = s.replace_mode || 0;
+  const matchSel = s.consumer_code
+    ? `<span style="font-size:0.76rem;color:var(--dim)">M:—</span>`
+    : `<select style="${SEL_STYLE}" onchange="patchSlotMode(${s.index},+this.value,${rm})">`
+      + `<option value="0"${mm===0?' selected':''}>M:exact</option>`
+      + `<option value="1"${mm===1?' selected':''}>M:any</option>`
+      + `</select>`;
+  const replSel = `<select style="${SEL_STYLE}" onchange="patchSlotMode(${s.index},${s.consumer_code?0:mm},+this.value)">`
+    + `<option value="0"${rm===0?' selected':''}>R:send</option>`
+    + `<option value="1"${rm===1?' selected':''}>R:keep</option>`
+    + `</select>`;
+  return `<td style="white-space:nowrap;vertical-align:middle">${matchSel}<br>${replSel}</td>`;
+}
+
 function renderSlotList(id, slots, tabName) {
   const el = document.getElementById(id);
   if (!slots.length) { el.innerHTML = '<p>No entries yet.</p>'; return; }
   el.innerHTML =
-    '<table><tr><th>Label</th><th>Hotkey</th><th>Text</th><th></th></tr>'
+    '<table><tr><th>Label</th><th>Hotkey</th><th>Text</th><th>Mode</th><th></th></tr>'
     + slots.map(s =>
         `<tr>`
         + `<td>${htmlEsc(s.label)}</td>`
         + `<td>${htmlEsc(fmtTrigger(s))}</td>`
         + `<td>${htmlEsc(slotText(s))}</td>`
+        + modeCell(s)
         + `<td>`
         + `<button onclick="editSlot(${s.index},'${tabName}')">Edit</button> `
         + `<button onclick="deleteSlot(${s.index})">Delete</button>`
         + `</td></tr>`
       ).join('')
     + '</table>';
+}
+
+async function patchSlotMode(index, matchMode, replaceMode) {
+  const s = s_slots[index];
+  if (!s) return;
+  s.match_mode   = matchMode;
+  s.replace_mode = replaceMode;
+  await fetch('/api/slots/' + index, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      type: s.type, label: s.label,
+      modifiers: s.modifiers, keycode: s.keycode,
+      consumer_code: s.consumer_code || 0,
+      payload: s.payload || '',
+      match_mode: matchMode, replace_mode: replaceMode,
+    })
+  });
 }
 
 async function addSlot(tabName) {
