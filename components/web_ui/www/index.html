@@ -1107,22 +1107,13 @@ function slotText(s) {
   return s.payload;
 }
 
-const SEL_STYLE = 'font-size:0.76rem;padding:0.1rem 0.15rem;background:var(--bg3);color:var(--text);border:1px solid var(--border);border-radius:2px;cursor:pointer';
-
 function modeCell(s) {
   const mm = s.match_mode   || 0;
   const rm = s.replace_mode || 0;
-  const matchSel = s.consumer_code
-    ? `<span style="font-size:0.76rem;color:var(--dim)">M:—</span>`
-    : `<select style="${SEL_STYLE}" onchange="patchSlotMode(${s.index},+this.value,${rm})">`
-      + `<option value="0"${mm===0?' selected':''}>M:exact</option>`
-      + `<option value="1"${mm===1?' selected':''}>M:any</option>`
-      + `</select>`;
-  const replSel = `<select style="${SEL_STYLE}" onchange="patchSlotMode(${s.index},${s.consumer_code?0:mm},+this.value)">`
-    + `<option value="0"${rm===0?' selected':''}>R:send</option>`
-    + `<option value="1"${rm===1?' selected':''}>R:keep</option>`
-    + `</select>`;
-  return `<td style="white-space:nowrap;vertical-align:middle">${matchSel}<br>${replSel}</td>`;
+  const mLabel = s.consumer_code ? '—' : (mm === 0 ? 'exact' : 'any');
+  const rLabel = rm === 0 ? 'send' : 'keep';
+  return `<td style="white-space:nowrap;font-size:0.8rem;color:var(--dim)">`
+    + `M:${mLabel}<br>R:${rLabel}</td>`;
 }
 
 function renderSlotList(id, slots, tabName) {
@@ -1142,24 +1133,6 @@ function renderSlotList(id, slots, tabName) {
         + `</td></tr>`
       ).join('')
     + '</table>';
-}
-
-async function patchSlotMode(index, matchMode, replaceMode) {
-  const s = s_slots[index];
-  if (!s) return;
-  s.match_mode   = matchMode;
-  s.replace_mode = replaceMode;
-  await fetch('/api/slots/' + index, {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      type: s.type, label: s.label,
-      modifiers: s.modifiers, keycode: s.keycode,
-      consumer_code: s.consumer_code || 0,
-      payload: s.payload || '',
-      match_mode: matchMode, replace_mode: replaceMode,
-    })
-  });
 }
 
 async function addSlot(tabName) {
