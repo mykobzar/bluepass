@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Bluepass v2 — Web Installer</title>
+  <script type="module" src="https://unpkg.com/esp-web-tools@10/dist/web/install-button.js"></script>
+  <style>
+    :root {
+      --bg:        #1a1a1a;
+      --card:      #242424;
+      --card2:     #2a2a2a;
+      --border:    #383838;
+      --text:      #e8e8e8;
+      --dim:       #888;
+      --blue:      #4fc3f7;
+      --blue-btn:  #0288d1;
+      --blue-dark: #01579b;
+      --blue-bg:   #0d2137;
+      --green:     #4caf50;
+      --green-dark:#1b5e20;
+      --green-bg:  #0a1f0a;
+      --amber:     #ff9800;
+      --red:       #f44336;
+      --red-dark:  #7f0000;
+      --red-bg:    #1a0000;
+      --purple:    #ce93d8;
+      --purple-dark:#4a148c;
+      --purple-bg: #180d24;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 2rem 1rem 3rem;
+      gap: 2rem;
+    }
+
+    /* ── Hero ── */
+    .hero { text-align: center; margin-top: 0.5rem; }
+    .hero-title { font-size: 2.6rem; font-weight: 700; letter-spacing: 0.12em; color: var(--blue); }
+    .hero-sub { margin-top: 0.5rem; color: var(--dim); font-size: 0.95rem; letter-spacing: 0.02em; }
+    .hero-v2 {
+      display: inline-block; margin-top: 0.6rem;
+      background: var(--purple-bg); border: 1px solid var(--purple-dark);
+      color: var(--purple); border-radius: 6px; padding: 0.25rem 0.75rem;
+      font-size: 0.8rem; font-weight: 700; letter-spacing: 0.08em;
+    }
+
+    /* ── Cards ── */
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 1.6rem;
+      width: 100%;
+      max-width: 480px;
+    }
+
+    .card-title {
+      font-size: 1rem;
+      font-weight: 700;
+      margin-bottom: 0.5rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .card-sub {
+      font-size: 0.85rem;
+      color: var(--dim);
+      margin-bottom: 1.2rem;
+      line-height: 1.55;
+    }
+
+    .badge-row { display: flex; gap: 0.5rem; margin-bottom: 1.2rem; flex-wrap: wrap; }
+    .badge {
+      display: inline-block; font-size: 0.72rem; font-family: monospace;
+      letter-spacing: 0.06em; color: var(--dim); background: var(--card2);
+      border: 1px solid var(--border); border-radius: 4px; padding: 0.2rem 0.55rem;
+    }
+    .badge.version  { color: var(--blue);   border-color: var(--blue-dark);   background: var(--blue-bg); }
+    .badge.secure   { color: var(--green);  border-color: var(--green-dark);  background: var(--green-bg); }
+    .badge.beta     { color: var(--amber);  border-color: #5a3800; background: #1a1000; }
+    .badge.v2       { color: var(--purple); border-color: var(--purple-dark); background: var(--purple-bg); }
+
+    /* ── Buttons ── */
+    esp-web-install-button { display: block; }
+
+    .install-btn {
+      display: block; width: 100%; padding: 0.85rem 1rem;
+      border: none; border-radius: 6px; font-size: 0.95rem; font-weight: 600;
+      letter-spacing: 0.03em; cursor: pointer;
+      transition: background 0.15s, transform 0.1s; text-align: center;
+    }
+    .install-btn.primary { background: var(--blue-btn); color: #fff; }
+    .install-btn.primary:hover  { background: #0277bd; }
+    .install-btn.primary:active { background: var(--blue-dark); transform: scale(0.99); }
+
+    .install-btn.enc { background: #1b5e20; color: #c8e6c9; border: 1px solid var(--green-dark); }
+    .install-btn.enc:hover  { background: #2e7d32; color: #e8f5e9; }
+    .install-btn.enc:active { background: var(--green-dark); transform: scale(0.99); }
+
+    .install-btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; background: #333; color: var(--dim); border-color: var(--border); }
+
+    .browser-note { margin-top: 0.85rem; font-size: 0.78rem; color: var(--dim); line-height: 1.6; }
+    .browser-note a { color: var(--blue); text-decoration: none; }
+    .browser-note a:hover { text-decoration: underline; }
+
+    /* ── What's new in v2 ── */
+    .whatsnew {
+      background: var(--purple-bg);
+      border: 1px solid var(--purple-dark);
+      border-radius: 6px;
+      padding: 1rem;
+      margin-bottom: 1.2rem;
+      font-size: 0.84rem;
+      line-height: 1.6;
+    }
+    .whatsnew .wn-title { color: var(--purple); font-weight: 700; margin-bottom: 0.5rem; font-size: 0.9rem; }
+    .whatsnew ul { padding-left: 1.1rem; }
+    .whatsnew li { margin-bottom: 0.2rem; color: #e1bee7; }
+
+    /* ── Encryption info box ── */
+    .enc-info {
+      background: var(--green-bg);
+      border: 1px solid var(--green-dark);
+      border-radius: 6px;
+      padding: 1rem;
+      margin-bottom: 1.2rem;
+      font-size: 0.84rem;
+      line-height: 1.6;
+    }
+    .enc-info .enc-title { color: var(--green); font-weight: 700; margin-bottom: 0.5rem; font-size: 0.9rem; }
+    .enc-info ul { padding-left: 1.1rem; }
+    .enc-info li { margin-bottom: 0.2rem; color: #a5d6a7; }
+    .enc-info .warn { color: var(--amber); font-weight: 600; margin-top: 0.6rem; display: block; }
+
+    /* ── Confirmation modal ── */
+    .overlay {
+      display: none;
+      position: fixed; inset: 0;
+      background: rgba(0,0,0,0.75);
+      z-index: 100;
+      align-items: center;
+      justify-content: center;
+      padding: 1rem;
+    }
+    .overlay.open { display: flex; }
+
+    .modal {
+      background: var(--card);
+      border: 1px solid #880000;
+      border-radius: 10px;
+      padding: 1.8rem;
+      max-width: 440px;
+      width: 100%;
+    }
+    .modal-title { color: var(--red); font-size: 1.1rem; font-weight: 700; margin-bottom: 1rem; }
+    .modal-body { font-size: 0.88rem; line-height: 1.65; color: #ddb8b8; }
+    .modal-body strong { color: var(--text); }
+    .modal-body .ok { color: #a5d6a7; }
+    .modal-body .block { color: #ef9a9a; font-weight: 600; }
+    .modal-check {
+      display: flex; align-items: flex-start; gap: 0.6rem;
+      margin-top: 1.2rem; font-size: 0.85rem; color: var(--text);
+      cursor: pointer;
+    }
+    .modal-check input { margin-top: 2px; accent-color: var(--red); flex-shrink: 0; }
+    .modal-actions { display: flex; gap: 0.8rem; margin-top: 1.4rem; }
+    .btn-cancel {
+      flex: 1; padding: 0.7rem; border: 1px solid var(--border); border-radius: 6px;
+      background: transparent; color: var(--dim); cursor: pointer; font-size: 0.9rem;
+      transition: border-color 0.15s, color 0.15s;
+    }
+    .btn-cancel:hover { border-color: var(--text); color: var(--text); }
+    .btn-confirm {
+      flex: 1; padding: 0.7rem; border: 1px solid #880000; border-radius: 6px;
+      background: var(--red-bg); color: #ff6666; cursor: pointer; font-size: 0.9rem;
+      font-weight: 600; transition: background 0.15s;
+      opacity: 0.4; pointer-events: none;
+    }
+    .btn-confirm.ready { opacity: 1; pointer-events: auto; }
+    .btn-confirm.ready:hover { background: #2a0000; }
+
+    /* ── Divider ── */
+    .sep { width: 100%; max-width: 480px; border: none; border-top: 1px solid var(--border); }
+
+    /* ── After-flashing steps ── */
+    .steps { width: 100%; max-width: 480px; }
+    .steps-title { font-size: 0.72rem; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: var(--dim); margin-bottom: 1rem; }
+    .step { display: flex; gap: 0.9rem; padding: 0.7rem 0; border-top: 1px solid var(--border); align-items: flex-start; }
+    .step:last-child { border-bottom: 1px solid var(--border); }
+    .step-n { flex-shrink: 0; width: 1.45rem; height: 1.45rem; border-radius: 50%; background: var(--blue-bg); border: 1px solid var(--blue-dark); display: flex; align-items: center; justify-content: center; font-size: 0.72rem; font-weight: 700; color: var(--blue); margin-top: 0.1rem; }
+    .step-body { font-size: 0.88rem; line-height: 1.55; color: var(--text); }
+    .step-body code { font-family: monospace; font-size: 0.85em; color: var(--blue); background: var(--blue-bg); padding: 0.05em 0.3em; border-radius: 3px; }
+
+    /* ── Footer ── */
+    footer { font-size: 0.8rem; color: var(--dim); text-align: center; padding-bottom: 0.5rem; }
+    footer a { color: var(--dim); text-decoration: none; transition: color 0.15s; }
+    footer a:hover { color: var(--blue); }
+    footer .dot { margin: 0 0.5rem; }
+  </style>
+</head>
+<body>
+
+  <div class="hero">
+    <div class="hero-title">bluepass</div>
+    <div class="hero-sub">Passwords · Authenticator codes · Webhooks · MQTT &nbsp;—&nbsp; ESP32-S3</div>
+    <div class="hero-v2">v2 BETA</div>
+  </div>
+
+  <!-- ── Standard install card ── -->
+  <div class="card">
+    <div class="card-title">Install v2</div>
+    <div class="card-sub">Installs the v2 beta firmware. Flash storage is not encrypted — settings are readable if someone has physical access to the chip.</div>
+
+    <div class="whatsnew">
+      <div class="wn-title">&#9733; What's new in v2</div>
+      <ul>
+        <li><strong style="color:#e1bee7">Multi-role connection modes</strong> — BT&#8594;USB, BT&#8594;BT, USB&#8594;BT</li>
+        <li>Device can act as Bluetooth central <em>and</em> peripheral simultaneously</li>
+        <li>Bridge two Bluetooth devices without a USB host</li>
+      </ul>
+    </div>
+
+    <div class="badge-row">
+      <span class="badge">ESP32-S3</span>
+      <span class="badge version">v2.0.0</span>
+      <span class="badge beta">beta</span>
+      <span class="badge v2">v2 branch</span>
+    </div>
+
+    <esp-web-install-button manifest="manifest-2.0.0-beta.json">
+      <button slot="activate" class="install-btn primary">Connect &amp; Install v2</button>
+      <span slot="unsupported">
+        <button class="install-btn" disabled>Connect &amp; Install v2</button>
+        <p class="browser-note">Requires <strong style="color:var(--text)">Chrome</strong> or <strong style="color:var(--text)">Edge</strong> (Web Serial API).<br>
+          <a href="https://github.com/mykobzar/bluepass/tree/dev/2.0/firmware">Download firmware</a> for manual flashing.</p>
+      </span>
+      <span slot="not-allowed">
+        <button class="install-btn" disabled>Connect &amp; Install v2</button>
+        <p class="browser-note">HTTPS required. <a href="https://mykobzar.github.io/bluepass/v2.html">Open secure version</a>.</p>
+      </span>
+    </esp-web-install-button>
+
+    <p class="browser-note" id="serial-note-1">Requires Chrome or Edge &nbsp;·&nbsp; Web Serial API</p>
+  </div>
+
+  <!-- ── Encrypted install card ── -->
+  <div class="card">
+    <div class="card-title">
+      <span style="color:var(--green)">&#128274;</span>
+      Install v2 with flash encryption
+      <span class="badge beta" style="font-size:0.65rem;padding:0.15rem 0.45rem">beta</span>
+    </div>
+
+    <div class="enc-info">
+      <div class="enc-title">&#10003; What flash encryption gives you</div>
+      <ul>
+        <li>Passwords, TOTP secrets and all settings are <strong style="color:#e8f5e9">AES-XTS encrypted</strong> on the chip</li>
+        <li>Physical access to the board does not expose your secrets</li>
+        <li>OTA updates continue to work normally</li>
+        <li>Settings are preserved after firmware update</li>
+      </ul>
+      <span class="warn">&#9888; This action is irreversible. Read below before proceeding.</span>
+    </div>
+
+    <div class="badge-row">
+      <span class="badge">ESP32-S3</span>
+      <span class="badge version">v2.0.0</span>
+      <span class="badge beta">beta</span>
+      <span class="badge secure">AES-XTS</span>
+    </div>
+
+    <button class="install-btn enc" id="enc-open-btn" onclick="openEncModal()">
+      &#128274; Connect &amp; Install v2 with Encryption
+    </button>
+
+    <p class="browser-note" id="serial-note-2">Requires Chrome or Edge &nbsp;·&nbsp; Web Serial API</p>
+    <p class="browser-note" id="enc-unsupported" style="display:none">
+      Requires <strong style="color:var(--text)">Chrome</strong> or <strong style="color:var(--text)">Edge</strong>.<br>
+      <a href="https://github.com/mykobzar/bluepass/tree/dev/2.0/firmware">Download firmware</a> for manual flashing with encryption.
+    </p>
+
+    <!-- Hidden button that esp-web-tools actually uses, activated after confirmation -->
+    <esp-web-install-button manifest="manifest-2.0.0-beta-enc.json" id="enc-installer" style="display:none">
+      <button slot="activate" id="enc-real-btn">install</button>
+    </esp-web-install-button>
+  </div>
+
+  <!-- ── Confirmation modal ── -->
+  <div class="overlay" id="enc-modal">
+    <div class="modal">
+      <div class="modal-title">&#9888;&#xFE0E; Irreversible action — read before proceeding</div>
+      <div class="modal-body">
+        <p>Flashing this firmware will enable <strong>AES-XTS flash encryption</strong> on the device's first boot. The bootloader generates a unique key, stores it in eFuse, and encrypts the entire flash.</p>
+        <br>
+        <p><strong>After encryption is enabled:</strong></p>
+        <ul style="padding-left:1.1rem;margin-top:0.4rem">
+          <li class="ok">&#10003; &nbsp;OTA updates via the web UI continue to work</li>
+          <li class="ok">&#10003; &nbsp;All device features work normally</li>
+          <li class="ok">&#10003; &nbsp;Settings tab shows <em>Development mode</em> — you can optionally lock to Release mode there</li>
+          <li style="margin-top:0.4rem" class="block">&#215; &nbsp;Simple <code style="color:#ef9a9a;background:#200">esptool.py write_flash</code> no longer works (requires <code style="color:#ef9a9a;background:#200">--encrypt</code>)</li>
+          <li class="block">&#215; &nbsp;Encryption <strong>cannot be turned off</strong> — not even by Espressif</li>
+          <li class="block">&#215; &nbsp;If you lose OTA access and need to reflash, a computer with special tools is required</li>
+        </ul>
+        <br>
+        <p>The encryption key is generated on-device and never leaves the chip. It is <strong>not recoverable</strong> if the device is damaged.</p>
+      </div>
+
+      <label class="modal-check" id="modal-check-label">
+        <input type="checkbox" id="modal-confirm-cb" onchange="onModalCheck()">
+        I understand this is irreversible and want to install with encryption enabled
+      </label>
+
+      <div class="modal-actions">
+        <button class="btn-cancel" onclick="closeEncModal()">Cancel</button>
+        <button class="btn-confirm" id="modal-confirm-btn" onclick="doEncInstall()">
+          Proceed with encryption
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <hr class="sep">
+
+  <div class="steps">
+    <div class="steps-title">After flashing</div>
+
+    <div class="step">
+      <div class="step-n">1</div>
+      <div class="step-body">Device boots and starts WiFi access point <code>bluepass</code> (open network)</div>
+    </div>
+    <div class="step">
+      <div class="step-n">2</div>
+      <div class="step-body">Connect to it and open <code>http://192.168.4.1</code></div>
+    </div>
+    <div class="step">
+      <div class="step-n">3</div>
+      <div class="step-body">Enter your WiFi credentials → <strong>Save &amp; Reboot</strong></div>
+    </div>
+    <div class="step">
+      <div class="step-n">4</div>
+      <div class="step-body">Short-press the button to activate the web UI on your local network</div>
+    </div>
+    <div class="step">
+      <div class="step-n">5</div>
+      <div class="step-body">Go to <strong>Settings → Board</strong> to configure button and LED pins for your board</div>
+    </div>
+    <div class="step">
+      <div class="step-n">&#128274;</div>
+      <div class="step-body" style="color:#a5d6a7">
+        <strong style="color:var(--green)">Encrypted install only:</strong> on first boot the device automatically enables AES-XTS encryption and reboots. This takes about 10 seconds — wait until the device restarts before connecting.
+      </div>
+    </div>
+  </div>
+
+  <hr class="sep">
+
+  <div style="width:100%;max-width:480px;font-size:0.82rem;color:var(--dim);line-height:1.6;">
+    Looking for the stable v1.x release?
+    <a href="index.html" style="color:var(--blue);text-decoration:none">&#8592; Back to v1 installer</a>
+  </div>
+
+  <footer>
+    <a href="https://github.com/mykobzar/bluepass/tree/dev/2.0">GitHub (v2 branch)</a>
+    <span class="dot">·</span>
+    <a href="https://github.com/mykobzar/bluepass/releases">Releases</a>
+    <span class="dot">·</span>
+    <a href="https://github.com/mykobzar/bluepass/blob/dev/2.0/README.md">Docs</a>
+    <span class="dot">·</span>
+    <a href="https://github.com/mykobzar/bluepass/tree/dev/2.0/firmware">Manual flash</a>
+  </footer>
+
+  <script>
+    if ('serial' in navigator) {
+      document.getElementById('serial-note-1').style.display = 'none';
+      document.getElementById('serial-note-2').style.display = 'none';
+    } else {
+      document.getElementById('enc-open-btn').style.display = 'none';
+      document.getElementById('enc-unsupported').style.display = 'block';
+    }
+
+    function openEncModal() {
+      document.getElementById('modal-confirm-cb').checked = false;
+      document.getElementById('modal-confirm-btn').classList.remove('ready');
+      document.getElementById('enc-modal').classList.add('open');
+    }
+
+    function closeEncModal() {
+      document.getElementById('enc-modal').classList.remove('open');
+    }
+
+    function onModalCheck() {
+      const checked = document.getElementById('modal-confirm-cb').checked;
+      document.getElementById('modal-confirm-btn').classList.toggle('ready', checked);
+    }
+
+    function doEncInstall() {
+      if (!document.getElementById('modal-confirm-cb').checked) return;
+      closeEncModal();
+      document.getElementById('enc-real-btn').click();
+    }
+
+    document.getElementById('enc-modal').addEventListener('click', function(e) {
+      if (e.target === this) closeEncModal();
+    });
+  </script>
+
+</body>
+</html>
