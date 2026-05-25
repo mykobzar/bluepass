@@ -2,7 +2,7 @@
 
 > Hardware Bluetooth → USB HID bridge with password injection, authenticator app codes and jiggler — firmware for ESP32-S3.
 
-![Version](https://img.shields.io/badge/version-1.0.0-blue)
+![Version](https://img.shields.io/badge/version-1.1.1--beta-blue)
 ![ESP-IDF](https://img.shields.io/badge/ESP--IDF-v5.2%2B-blue)
 ![Target](https://img.shields.io/badge/target-ESP32--S3-informational)
 ![License](https://img.shields.io/badge/license-MIT-green)
@@ -39,8 +39,11 @@ All keystrokes pass through transparently. Configured hotkey combinations are in
 |---|---|
 | **Password** | Stored secret typed as keystrokes; never exposed over the API |
 | **Text** | Arbitrary string, including characters the physical keyboard cannot produce |
-| **Authenticator code** | Live 6-digit one-time code — works with Google Authenticator, Microsoft Authenticator, Authy, Apple Passwords, and any TOTP-compatible app |
+| **Authenticator code** | Live 6-digit TOTP one-time code — works with Google Authenticator, Microsoft Authenticator, Authy, Apple Passwords, and any TOTP-compatible app |
 | **Jiggler** | Toggles periodic keypresses to prevent the laptop from sleeping |
+| **Webhook** | Sends an HTTP GET request to a configured URL when a hotkey is pressed |
+| **MQTT Out** | Publishes a message to an MQTT topic when a hotkey is pressed |
+| **MQTT In** | Sends a keystroke to the host when an MQTT message is received on a subscribed topic |
 
 The web interface is available over WiFi and **only after an explicit button press** — it is never exposed on boot.
 
@@ -142,18 +145,18 @@ Flash (replace the port with yours):
 # Linux / macOS
 esptool.py --chip esp32s3 --port /dev/ttyUSB0 --baud 460800 write_flash \
   --flash_mode dio --flash_freq 80m --flash_size 4MB \
-  0x0     firmware/bootloader-1.1.0-beta.bin \
-  0x8000  firmware/partition-table-1.1.0-beta.bin \
-  0x10000 firmware/ota_data_initial-1.1.0-beta.bin \
-  0x20000 firmware/bluepass-1.1.0-beta.bin
+  0x0     firmware/bootloader-1.1.1-beta.bin \
+  0x8000  firmware/partition-table-1.1.1-beta.bin \
+  0x10000 firmware/ota_data_initial-1.1.1-beta.bin \
+  0x20000 firmware/bluepass-1.1.1-beta.bin
 
 # Windows — use COM3, COM4, etc.
 esptool.py --chip esp32s3 --port COM3 --baud 460800 write_flash ^
   --flash_mode dio --flash_freq 80m --flash_size 4MB ^
-  0x0     firmware\bootloader-1.1.0-beta.bin ^
-  0x8000  firmware\partition-table-1.1.0-beta.bin ^
-  0x10000 firmware\ota_data_initial-1.1.0-beta.bin ^
-  0x20000 firmware\bluepass-1.1.0-beta.bin
+  0x0     firmware\bootloader-1.1.1-beta.bin ^
+  0x8000  firmware\partition-table-1.1.1-beta.bin ^
+  0x10000 firmware\ota_data_initial-1.1.1-beta.bin ^
+  0x20000 firmware\bluepass-1.1.1-beta.bin
 ```
 
 > **Windows GUI option:** see [`firmware/README.md`](firmware/README.md) for step-by-step instructions using the Espressif Flash Download Tool (no Python required).
@@ -309,21 +312,41 @@ The web interface **turns off automatically after 5 minutes of inactivity** (no 
 
 ---
 
-## Web interface tabs
+## Web interface
+
+The interface is divided into four top-level sections. **Activities** and **Settings** each reveal a submenu when selected.
+
+### Main navigation
+
+| Section | Description |
+|---|---|
+| **Info** | WiFi and Bluetooth connection status with signal strength; live key log |
+| **Bluetooth** | Scan, pair, disconnect; BLE diagnostic log |
+| **Activities** | All hotkey-based actions (see below) |
+| **Settings** | Device configuration (see below) |
+
+### Activities submenu
 
 | Tab | Purpose |
 |---|---|
-| **Info** | WiFi and Bluetooth connection status with signal strength; live key log |
 | **Text** | Hotkey → arbitrary text substitution |
 | **Passwords** | Hotkey → password (masked in the UI, never returned by the API) |
-| **TOTP** | Hotkey → authenticator app code; shows device clock sync status |
+| **Authenticator** | Hotkey → TOTP one-time code; shows device clock sync status |
 | **Jiggler** | Jiggler interval, key code, enable/disable hotkeys |
 | **List** | Full HID keycode reference (keyboard + Consumer Control) |
-| **Bluetooth** | Scan, pair, disconnect; BLE diagnostic log |
-| **Settings → WiFi** | Change WiFi network (triggers reboot) |
-| **Settings → Firmware** | OTA firmware update |
-| **Settings → Security** | Flash encryption status; switch from Development to Release mode |
-| **Settings → Board** | Button GPIO; LED type (RGB / Simple / None), GPIO and brightness |
+| **Webhook** | Hotkey → HTTP GET request to a configured URL |
+| **MQTT Out** | Hotkey → publish to an MQTT topic *(visible only when MQTT Out is enabled)* |
+| **MQTT In** | Subscribe topic → send keystroke *(visible only when MQTT In is enabled)* |
+
+### Settings submenu
+
+| Tab | Purpose |
+|---|---|
+| **WiFi** | Change WiFi network (triggers reboot) |
+| **Board** | Button GPIO; LED type (RGB / Simple / None), GPIO and brightness |
+| **MQTT** | Broker URL, credentials; enable/disable MQTT Out and MQTT In |
+| **Firmware** | OTA firmware update |
+| **Security** | Flash encryption status; switch from Development to Release mode |
 
 ---
 
@@ -351,7 +374,7 @@ Assign a hotkey to a service secret (base32 string). Pressing the hotkey types t
 - The system clock must be synchronised with NTP. The **TOTP** tab shows the sync status (`Device: synced Δ±Xs`). Codes are not generated if the clock is not synced.
 
 **Import from Google Authenticator:**  
-The TOTP tab includes an importer for `otpauth-migration://offline?data=…` links exported by the Google Authenticator app. Secrets from other apps can be entered manually as a base32 string.
+The **Authenticator** tab includes an importer for `otpauth-migration://offline?data=…` links exported by the Google Authenticator app. Secrets from other apps can be entered manually as a base32 string.
 
 ### Jiggler
 
@@ -368,6 +391,26 @@ The enabled/disabled state and all settings are persisted in NVS and restored af
 If enable/disable hotkeys are configured the jiggler can be controlled directly from the Bluetooth keyboard without opening the web interface.
 
 **Toggle mode:** leave the Disable hotkey field empty and the same key acts as a toggle — one press enables, next press disables.
+
+### Webhooks
+
+Assign a hotkey to an HTTP endpoint. When the hotkey is pressed, bluepass sends an HTTP GET request to the configured URL. An optional `value` parameter can be appended as a query string (`?value=…`).
+
+Use cases: trigger home automation scenes, press a button in a web app, ping a monitoring endpoint.
+
+Up to **4 webhook slots**. Webhooks require the device to be connected to WiFi. TLS (HTTPS) is supported.
+
+### MQTT
+
+bluepass can act as both an MQTT publisher and subscriber. Configuration is shared — a single broker URL, username, and password are used for both directions. MQTT Out and MQTT In can be enabled independently in **Settings → MQTT**.
+
+**MQTT Out** — publish on hotkey:  
+Assign a hotkey to a topic + value pair. Pressing the hotkey publishes the message to the MQTT broker.
+
+**MQTT In** — subscribe and send keystrokes:  
+Assign a topic (and optional match value) to a keystroke. When a message arrives on the topic (and the value matches, if set), bluepass sends the configured keystroke to the host over USB HID.
+
+Up to **4 MQTT Out slots** and **4 MQTT In slots**.
 
 ### Match and replace modes
 
@@ -387,7 +430,7 @@ Each hotkey slot has two independent mode selectors:
 | Replace all (default) | Substitution is sent with no modifiers held |
 | Keep modifiers | Modifiers active at trigger time are preserved and re-sent after typing |
 
-These modes are set per slot in the Add / Edit form on the Text, Passwords, and TOTP tabs.
+Each slot row in the Text, Passwords, and Authenticator tables shows the current mode as compact labels (`M:exact / M:any`, `R:send / R:keep`). Modes can be changed directly in the Add / Edit form without touching the slot content.
 
 ### Editing existing slots
 
@@ -506,12 +549,14 @@ Full list available on the **List** tab in the web interface.
 | Namespace | Contents |
 |---|---|
 | `wifi` | SSID + password |
-| `hotkeys` | Slot array: type, trigger combo, payload/secret, label |
+| `hotkeys` | Up to 32 slots: type, trigger combo, payload/secret, label, match/replace mode |
 | `jiggler` | Interval, key, on/off hotkeys, enabled state |
 | `ble` | Paired keyboard address + name |
 | `board` | Button GPIO, LED type, LED GPIO, brightness |
+| `webhook` | Broker enabled flag + up to 4 webhook slots (URL, value, trigger) |
+| `mqtt` | Broker URL/credentials, enabled flags + up to 4 Out slots + up to 4 In slots |
 
-Up to **16 hotkey slots** total across passwords, text and TOTP.
+**Slot limits:** 32 hotkey slots (passwords + text + TOTP combined) · 4 webhook slots · 4 MQTT Out slots · 4 MQTT In slots.
 
 ---
 
