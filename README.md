@@ -145,18 +145,18 @@ Flash (replace the port with yours):
 # Linux / macOS
 esptool.py --chip esp32s3 --port /dev/ttyUSB0 --baud 460800 write_flash \
   --flash_mode dio --flash_freq 80m --flash_size 4MB \
-  0x0     firmware/bootloader-1.1.1-beta.bin \
-  0x8000  firmware/partition-table-1.1.1-beta.bin \
-  0x10000 firmware/ota_data_initial-1.1.1-beta.bin \
-  0x20000 firmware/bluepass-1.1.1-beta.bin
+  0x0     firmware/bootloader-1.1.2.bin \
+  0x8000  firmware/partition-table-1.1.2.bin \
+  0x10000 firmware/ota_data_initial-1.1.2.bin \
+  0x20000 firmware/bluepass-1.1.2.bin
 
 # Windows — use COM3, COM4, etc.
 esptool.py --chip esp32s3 --port COM3 --baud 460800 write_flash ^
   --flash_mode dio --flash_freq 80m --flash_size 4MB ^
-  0x0     firmware\bootloader-1.1.1-beta.bin ^
-  0x8000  firmware\partition-table-1.1.1-beta.bin ^
-  0x10000 firmware\ota_data_initial-1.1.1-beta.bin ^
-  0x20000 firmware\bluepass-1.1.1-beta.bin
+  0x0     firmware\bootloader-1.1.2.bin ^
+  0x8000  firmware\partition-table-1.1.2.bin ^
+  0x10000 firmware\ota_data_initial-1.1.2.bin ^
+  0x20000 firmware\bluepass-1.1.2.bin
 ```
 
 > **Windows GUI option:** see [`firmware/README.md`](firmware/README.md) for step-by-step instructions using the Espressif Flash Download Tool (no Python required).
@@ -314,7 +314,7 @@ The web interface **turns off automatically after 5 minutes of inactivity** (no 
 
 ## Web interface
 
-The interface is divided into four top-level sections. **Activities** and **Settings** each reveal a submenu when selected.
+The interface is divided into four top-level sections. **Hotkeys** and **Settings** each reveal a submenu when selected.
 
 ### Main navigation
 
@@ -322,10 +322,10 @@ The interface is divided into four top-level sections. **Activities** and **Sett
 |---|---|
 | **Info** | WiFi and Bluetooth connection status with signal strength; live key log |
 | **Bluetooth** | Scan, pair, disconnect; BLE diagnostic log |
-| **Activities** | All hotkey-based actions (see below) |
+| **Hotkeys** | All hotkey-based actions (see below) |
 | **Settings** | Device configuration (see below) |
 
-### Activities submenu
+### Hotkeys submenu
 
 | Tab | Purpose |
 |---|---|
@@ -346,7 +346,7 @@ The interface is divided into four top-level sections. **Activities** and **Sett
 | **Board** | Button GPIO; LED type (RGB / Simple / None), GPIO and brightness |
 | **MQTT** | Broker URL, credentials; enable/disable MQTT Out and MQTT In |
 | **Firmware** | OTA firmware update |
-| **Security** | Flash encryption status; switch from Development to Release mode |
+| **Flash Encryption** | Flash encryption status; switch from Development to Release mode |
 
 ---
 
@@ -460,7 +460,7 @@ Changes take effect after reboot.
 
 ### Flash encryption
 
-bluepass supports ESP32 hardware AES-XTS flash encryption. The **Settings → Security** tab shows the current encryption mode and explains the consequences of each state:
+bluepass supports ESP32 hardware AES-XTS flash encryption. The **Settings → Flash Encryption** tab shows the current encryption mode and explains the consequences of each state:
 
 | Mode | Flash content | UART flash | JTAG |
 |---|---|---|---|
@@ -477,7 +477,7 @@ Open **[https://mykobzar.github.io/bluepass/](https://mykobzar.github.io/bluepas
 Use the `-enc` firmware variant from [`firmware/`](firmware/) — see [`firmware/README.md`](firmware/README.md) for the full flash command.
 
 **Switching to Release mode:**  
-After enabling encryption, use **Settings → Security → Switch to Release Mode** to permanently disable UART flashing and JTAG. This burns additional eFuse bits that cannot be undone. Switching to Release mode is irreversible.
+After enabling encryption, use **Settings → Flash Encryption → Switch to Release Mode** to permanently disable UART flashing and JTAG. This burns additional eFuse bits that cannot be undone. Switching to Release mode is irreversible.
 
 > Verify that OTA firmware updates work correctly before switching to Release mode.
 

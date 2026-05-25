@@ -178,7 +178,7 @@ static void board_config_defaults(board_config_t *cfg)
     cfg->btn_gpio          = 0;
     cfg->led_type          = BOARD_LED_TYPE_RGB;
     cfg->rgb_gpio          = 48;
-    cfg->rgb_brightness    = 4;
+    cfg->rgb_brightness    = 20;
     cfg->simple_gpio       = -1;
     cfg->simple_active_high = 1;
 }

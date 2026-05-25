@@ -45,9 +45,16 @@
 #define WHITE_G_F  255
 #define WHITE_B_F  255
 
-static uint8_t s_brightness = 4;  // 1-100 %
+static uint8_t s_brightness = 20;  // 1-100 %
 
-static uint8_t scale(uint8_t v) { return (uint8_t)((uint32_t)v * s_brightness / 100); }
+// WS2812 PWM is linear but human eye follows a power curve (gamma ~2.2).
+// Squaring the normalised input (gamma=2 approximation) gives a perceptually
+// even brightness ramp: perceived 50% → 25% PWM, 10% → 1% PWM.
+static uint8_t scale(uint8_t v) {
+    uint32_t linear = (uint32_t)s_brightness * 255 / 100;  // perceptual % → 0-255
+    uint32_t pwm    = linear * linear / 255;                // gamma-2 correction
+    return (uint8_t)((uint32_t)v * pwm / 255);
+}
 
 #define RED_R    scale(RED_R_F)
 #define RED_G    scale(RED_G_F)

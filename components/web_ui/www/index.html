@@ -75,6 +75,7 @@
   }
   #list-content { max-height: 480px; overflow-y: auto; }
   .hotkey-hint { font-size: 0.78rem; color: var(--dim); margin-top: 0.15rem; }
+  .tab-desc { font-size: 0.88rem; color: var(--dim); margin: 0 0 1rem; line-height: 1.5; }
   #ble-conn-info {
     margin-bottom: 0.8rem; padding: 0.5rem;
     background: var(--bg2); border: 1px solid var(--border); border-radius: 4px;
@@ -143,7 +144,7 @@
 <nav id="main-nav" style="display:none">
   <button onclick="show('log')">Info</button>
   <button onclick="show('ble')">Bluetooth</button>
-  <button onclick="show('text')">Activities</button>
+  <button onclick="show('text')">Hotkeys</button>
   <button onclick="show('wifi')">Settings</button>
 </nav>
 <nav id="activities-nav">
@@ -151,7 +152,6 @@
   <button onclick="show('passwords')">Passwords</button>
   <button onclick="show('totp')">Authenticator</button>
   <button onclick="show('jiggler')">Jiggler</button>
-  <button onclick="show('list')">List</button>
   <button onclick="show('webhook')">Webhook</button>
   <button id="act-mqtt-out" onclick="show('mqtt-out')" style="display:none">MQTT Out</button>
   <button id="act-mqtt-in" onclick="show('mqtt-in')" style="display:none">MQTT In</button>
@@ -161,7 +161,7 @@
   <button onclick="show('board')">Board</button>
   <button onclick="show('mqtt')">MQTT</button>
   <button onclick="show('ota')">Firmware</button>
-  <button onclick="show('security')">Security</button>
+  <button onclick="show('security')">Flash Encryption</button>
 </nav>
 
 <!-- Info -->
@@ -184,6 +184,7 @@
 <!-- Text -->
 <div id="tab-text" class="tab">
   <h3>Hotkey &#8594; Text</h3>
+  <p class="tab-desc">Press a hotkey on your Bluetooth keyboard — the device types the stored text on the connected computer. Useful for snippets, logins, commands, or any characters your keyboard can't send directly.</p>
   <div id="text-list"></div>
   <h4 id="tx-form-title">Add</h4>
   <label>Label <input id="tx-label" type="text"></label>
@@ -191,6 +192,7 @@
     <input id="tx-hotkey" type="text" placeholder="e.g. &lt;Shift&gt;+&lt;R&gt; or &lt;0x32&gt; or &lt;PlayPause&gt;">
     <span class="hotkey-hint">Modifiers: &lt;Ctrl&gt; &lt;Shift&gt; &lt;Alt&gt; &lt;Win&gt; &lt;RCtrl&gt; &lt;RShift&gt; &lt;RAlt&gt; &lt;RWin&gt; — use hex: &lt;0x15&gt; keyboard / &lt;0x00CD&gt; consumer</span>
   </label>
+  <label>Text <input id="tx-payload" type="text"></label>
   <label>Match &amp; replace mode
     <div style="display:flex;gap:0.5rem;margin-top:0.2rem">
       <select id="tx-match-mode">
@@ -203,14 +205,15 @@
       </select>
     </div>
   </label>
-  <label>Text <input id="tx-payload" type="text"></label>
   <button id="tx-add-btn" onclick="addSlot('text')">Add</button>
   <button id="tx-cancel-btn" onclick="cancelEdit('text')" style="display:none;margin-left:0.4rem">Cancel</button>
+  <p style="margin-top:1rem;font-size:0.8rem;color:var(--dim)"><a href="https://github.com/mykobzar/bluepass/blob/main/docs/keycodes.md" target="_blank" rel="noopener">Key code reference</a></p>
 </div>
 
 <!-- Passwords -->
 <div id="tab-passwords" class="tab">
   <h3>Hotkey &#8594; Password</h3>
+  <p class="tab-desc">Press a hotkey to type a stored password on the connected computer. Passwords are write-only — they are never shown after saving. Use a unique hotkey per account to avoid mixing them up.</p>
   <div id="pw-list"></div>
   <h4 id="pw-form-title">Add</h4>
   <label>Label <input id="pw-label" type="text"></label>
@@ -218,6 +221,7 @@
     <input id="pw-hotkey" type="text" placeholder="e.g. &lt;Ctrl&gt;+&lt;Shift&gt;+&lt;P&gt; or &lt;0x32&gt;">
     <span class="hotkey-hint">Modifiers: &lt;Ctrl&gt; &lt;Shift&gt; &lt;Alt&gt; &lt;Win&gt; &lt;RCtrl&gt; &lt;RShift&gt; &lt;RAlt&gt; &lt;RWin&gt; — use hex: &lt;0x15&gt; keyboard / &lt;0x00CD&gt; consumer</span>
   </label>
+  <label>Password <input id="pw-payload" type="password" placeholder="Enter new password (leave blank to keep current)"></label>
   <label>Match &amp; replace mode
     <div style="display:flex;gap:0.5rem;margin-top:0.2rem">
       <select id="pw-match-mode">
@@ -230,14 +234,15 @@
       </select>
     </div>
   </label>
-  <label>Password <input id="pw-payload" type="password" placeholder="Enter new password (leave blank to keep current)"></label>
   <button id="pw-add-btn" onclick="addSlot('passwords')">Add</button>
   <button id="pw-cancel-btn" onclick="cancelEdit('passwords')" style="display:none;margin-left:0.4rem">Cancel</button>
+  <p style="margin-top:1rem;font-size:0.8rem;color:var(--dim)"><a href="https://github.com/mykobzar/bluepass/blob/main/docs/keycodes.md" target="_blank" rel="noopener">Key code reference</a></p>
 </div>
 
 <!-- TOTP -->
 <div id="tab-totp" class="tab">
   <h3>Hotkey &#8594; TOTP</h3>
+  <p class="tab-desc">Press a hotkey to type the current 6-digit one-time code for a service (Google Authenticator / RFC 6238). The device must be time-synced via NTP — connect to WiFi before use.</p>
   <div id="totp-clock-row">
     <span id="totp-clock">--:--:-- UTC</span>
     <span style="display:flex;align-items:center;gap:0.4rem">
@@ -255,6 +260,7 @@
     <input id="tp-hotkey" type="text" placeholder="e.g. &lt;Ctrl&gt;+&lt;Shift&gt;+&lt;T&gt; or &lt;0x32&gt;">
     <span class="hotkey-hint">Modifiers: &lt;Ctrl&gt; &lt;Shift&gt; &lt;Alt&gt; &lt;Win&gt; &lt;RCtrl&gt; &lt;RShift&gt; &lt;RAlt&gt; &lt;RWin&gt; — use hex: &lt;0x15&gt; keyboard / &lt;0x00CD&gt; consumer</span>
   </label>
+  <label>TOTP secret (base32) <input id="tp-payload" type="password" placeholder="Enter new secret (leave blank to keep current)"></label>
   <label>Match &amp; replace mode
     <div style="display:flex;gap:0.5rem;margin-top:0.2rem">
       <select id="tp-match-mode">
@@ -267,9 +273,9 @@
       </select>
     </div>
   </label>
-  <label>TOTP secret (base32) <input id="tp-payload" type="password" placeholder="Enter new secret (leave blank to keep current)"></label>
   <button id="tp-add-btn" onclick="addSlot('totp')">Add</button>
   <button id="tp-cancel-btn" onclick="cancelEdit('totp')" style="display:none;margin-left:0.4rem">Cancel</button>
+  <p style="margin-top:1rem;font-size:0.8rem;color:var(--dim)"><a href="https://github.com/mykobzar/bluepass/blob/main/docs/keycodes.md" target="_blank" rel="noopener">Key code reference</a></p>
   <details style="margin-top:1.2rem">
     <summary>&#128273; Import from Google Authenticator export link</summary>
     <div style="margin-top:0.6rem">
@@ -287,6 +293,7 @@
 <!-- Jiggler -->
 <div id="tab-jiggler" class="tab">
   <h3>Jiggler</h3>
+  <p class="tab-desc">Periodically sends a keystroke to prevent the computer from going to sleep or locking the screen. One hotkey enables it, another disables it. The key and interval are configurable.</p>
   <label><input id="jig-enabled" type="checkbox"> Enabled</label>
   <label>Interval (seconds) <input id="jig-interval" type="number" value="60" min="1"></label>
   <label>Key code (hex or dec)
@@ -305,12 +312,6 @@
   <div id="jig-status" class="status"></div>
 </div>
 
-<!-- List -->
-<div id="tab-list" class="tab">
-  <h3>Key Code Reference</h3>
-  <div id="list-content"></div>
-</div>
-
 <!-- Bluetooth -->
 <div id="tab-ble" class="tab">
   <h3>Bluetooth Pairing</h3>
@@ -321,14 +322,17 @@
   <button id="ble-scan-btn" onclick="bleScan()">Scan (4 s)</button>
   <span id="ble-scan-status" class="status"></span>
   <ul id="ble-results" style="margin-top:0.6rem;padding-left:1rem"></ul>
-  <h4>BLE Diagnostic Log</h4>
-  <div id="ble-log"></div>
-  <button onclick="loadBleLog()" style="margin-top:0.3rem">Refresh log</button>
+  <details style="margin-top:1rem">
+    <summary>BLE Diagnostic Log</summary>
+    <div id="ble-log" style="margin-top:0.5rem"></div>
+    <button onclick="loadBleLog()" style="margin-top:0.3rem">Refresh log</button>
+  </details>
 </div>
 
 <!-- WiFi -->
 <div id="tab-wifi" class="tab">
   <h3>WiFi Settings</h3>
+  <div id="wifi-tab-status" style="font-size:0.9rem;margin-bottom:0.8rem;color:#aaa">Loading…</div>
   <label>SSID
     <input id="wifi-ssid" type="text" placeholder="Network name" autocomplete="off">
   </label>
@@ -389,9 +393,9 @@
   </details>
 </div>
 
-<!-- Security -->
+<!-- Flash Encryption -->
 <div id="tab-security" class="tab">
-  <h3>Security</h3>
+  <h3>Flash Encryption</h3>
 
   <div id="sec-status" style="padding:0.75rem;background:var(--bg2);border:1px solid var(--border);border-radius:4px;margin-bottom:1.2rem">Loading…</div>
 
@@ -515,7 +519,7 @@
         <label style="display:flex;align-items:center;gap:0.7rem">
           Brightness
           <input id="bd-rgb-brightness" type="range" min="1" max="100" style="flex:1">
-          <span id="bd-rgb-brightness-val" style="width:3rem;text-align:right">4%</span>
+          <span id="bd-rgb-brightness-val" style="width:3rem;text-align:right">20%</span>
         </label>
       </div>
 
@@ -542,6 +546,7 @@
 <!-- Webhook -->
 <div id="tab-webhook" class="tab">
   <h3>Webhook</h3>
+  <p class="tab-desc">Press a hotkey to send an HTTP request to a configured URL. Use it to trigger smart home scenes, CI pipelines, or any service that accepts webhooks.</p>
   <div style="margin-bottom:1rem;display:flex;align-items:center;gap:0.8rem;flex-wrap:wrap">
     <label style="display:inline-flex;align-items:center;gap:0.4rem;margin:0">
       <input id="wh-enabled" type="checkbox"> Enable Webhooks
@@ -567,6 +572,7 @@
 <!-- MQTT (Settings) -->
 <div id="tab-mqtt" class="tab">
   <h3>MQTT</h3>
+  <div id="mqtt-conn-status" style="font-size:0.9rem;margin-bottom:0.8rem"></div>
   <fieldset style="margin-bottom:1.2rem;padding:0.8rem 1rem;border:1px solid var(--border);border-radius:4px">
     <legend style="padding:0 0.4rem;font-size:0.88rem;color:var(--dim)">Broker</legend>
     <label>URL <input id="mqtt-broker-url" type="text" placeholder="mqtt://192.168.1.100:1883 or mqtts://…"></label>
@@ -587,12 +593,12 @@
     <button onclick="saveMqttConfig()">Save</button>
     <span id="mqtt-cfg-status" class="status" style="margin:0"></span>
   </div>
-  <div id="mqtt-conn-status" style="font-size:0.9rem"></div>
 </div>
 
-<!-- MQTT Out (Activities) -->
+<!-- MQTT Out (Hotkeys) -->
 <div id="tab-mqtt-out" class="tab">
   <h3>MQTT Out</h3>
+  <p class="tab-desc">Press a hotkey to publish a message to an MQTT topic. Use it to trigger automations in Home Assistant, Node-RED, or any MQTT-connected system.</p>
   <div id="mqtt-out-list"></div>
   <h4 id="mqtt-out-form-title">Add Slot</h4>
   <label>Label <input id="mqtt-out-label" type="text"></label>
@@ -606,9 +612,10 @@
   <button id="mqtt-out-cancel-btn" onclick="cancelMqttOutEdit()" style="display:none;margin-left:0.4rem">Cancel</button>
 </div>
 
-<!-- MQTT In (Activities) -->
+<!-- MQTT In (Hotkeys) -->
 <div id="tab-mqtt-in" class="tab">
   <h3>MQTT In</h3>
+  <p class="tab-desc">Subscribe to an MQTT topic — when a matching message arrives, the device types a keystroke on the connected computer. Use it to trigger actions from automations, scripts, or other devices.</p>
   <div id="mqtt-in-list"></div>
   <h4 id="mqtt-in-form-title">Add Slot</h4>
   <label>Label <input id="mqtt-in-label" type="text"></label>
@@ -845,8 +852,8 @@ function show(name) {
   document.getElementById('activities-nav').style.display =
     (mainNavVisible && activitiesTabs.includes(name)) ? 'block' : 'none';
   if (name === 'log')      { loadInfoCards(); }
+  if (name === 'wifi')     { loadWifiTabStatus(); }
   if (name === 'ble')      { loadBleStatus(); loadBleLog(); }
-  if (name === 'list')     { renderList(); }
   if (name === 'security') { loadSecurity(); }
   if (name === 'board')    { loadBoard(); }
   if (name === 'webhook')  { loadWebhook(); }
@@ -912,7 +919,7 @@ async function logout() {
   document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
   document.getElementById('tab-log').innerHTML =
     '<p style="color:var(--dim);margin-top:2rem;text-align:center">' +
-    'Web interface deactivated. Press the GPIO0 button to reactivate.</p>';
+    'Web interface deactivated. Press the button to reactivate.</p>';
   document.getElementById('tab-log').classList.add('active');
 }
 
@@ -964,6 +971,20 @@ function rssiColor(rssi) {
   if (rssi >= -60) return '#4caf50';
   if (rssi >= -75) return '#ff9800';
   return '#f44336';
+}
+
+async function loadWifiTabStatus() {
+  const el = document.getElementById('wifi-tab-status');
+  try {
+    const d = await fetch('/api/wifi').then(r => r.json());
+    if (d.connected) {
+      const color = rssiColor(d.rssi);
+      el.innerHTML = `<span style="color:#4caf50">&#9679; Connected</span> &mdash; ${d.ssid}` +
+        (d.rssi !== undefined ? ` &mdash; Signal: <span style="color:${color}">${d.rssi} dBm</span>` : '');
+    } else {
+      el.innerHTML = '<span style="color:#f44336">&#9679; Not connected</span>';
+    }
+  } catch(_) { el.textContent = 'Error'; }
 }
 
 async function loadInfoCards() {
@@ -1110,10 +1131,10 @@ function slotText(s) {
 function modeCell(s) {
   const mm = s.match_mode   || 0;
   const rm = s.replace_mode || 0;
-  const mLabel = s.consumer_code ? '—' : (mm === 0 ? 'exact' : 'any');
-  const rLabel = rm === 0 ? 'send' : 'keep';
+  const mLabel = s.consumer_code ? '—' : (mm === 0 ? 'Exact' : 'Keycode');
+  const rLabel = rm === 0 ? 'Replace' : 'Keep';
   return `<td style="white-space:nowrap;font-size:0.8rem;color:var(--dim)">`
-    + `M:${mLabel}<br>R:${rLabel}</td>`;
+    + `${mLabel}<br>${rLabel}</td>`;
 }
 
 function renderSlotList(id, slots, tabName) {
@@ -1370,28 +1391,6 @@ async function saveJiggler() {
     headers: { 'Content-Type': 'application/json' }
   });
   document.getElementById('jig-status').textContent = 'Saved.';
-}
-
-// ── List (reference) ──────────────────────────────────────────────────────────
-let s_listRendered = false;
-function renderList() {
-  if (s_listRendered) return;
-  s_listRendered = true;
-  const rows = [];
-  const kbEntries = Object.entries(HID_TO_NAME)
-    .map(([k, v]) => [Number(k), v])
-    .sort((a, b) => a[0] - b[0]);
-  for (const [kc, name] of kbEntries) {
-    rows.push(`<tr><td>0x${kc.toString(16).padStart(2,'0')}</td><td>${htmlEsc(name)}</td><td>Keyboard</td></tr>`);
-  }
-  const ccEntries = Object.entries(CONSUMER_TO_NAME)
-    .map(([k, v]) => [Number(k), v])
-    .sort((a, b) => a[0] - b[0]);
-  for (const [cc, name] of ccEntries) {
-    rows.push(`<tr><td>0x${cc.toString(16).padStart(4,'0')}</td><td>${htmlEsc(name)}</td><td>Consumer</td></tr>`);
-  }
-  document.getElementById('list-content').innerHTML =
-    '<table><tr><th>Code</th><th>Name</th><th>Type</th></tr>' + rows.join('') + '</table>';
 }
 
 // ── TOTP import (otpauth-migration) ──────────────────────────────────────────

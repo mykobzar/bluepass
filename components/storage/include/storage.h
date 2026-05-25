@@ -75,7 +75,7 @@ typedef struct {
     int32_t btn_gpio;           // button GPIO, default 0
     uint8_t led_type;           // board_led_type_t, default BOARD_LED_TYPE_RGB
     int32_t rgb_gpio;           // WS2812 LED GPIO, default 48
-    uint8_t rgb_brightness;     // 1-100 percent, default 4
+    uint8_t rgb_brightness;     // 1-100 percent, default 20
     int32_t simple_gpio;        // plain LED GPIO, default -1 (not configured)
     uint8_t simple_active_high; // 1=active high, 0=active low, default 1
 } board_config_t;
