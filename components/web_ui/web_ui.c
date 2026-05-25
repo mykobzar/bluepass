@@ -14,6 +14,7 @@
 #include "esp_crt_bundle.h"
 #include "esp_wifi.h"
 #include "esp_ota_ops.h"
+#include "esp_https_ota.h"
 #include "esp_system.h"
 #include "esp_app_desc.h"
 #include "freertos/FreeRTOS.h"
@@ -688,7 +689,7 @@ static esp_err_t handler_ota_upload(httpd_req_t *req)
     return ESP_OK;
 }
 
-// Async task: download firmware from URL and flash it
+// Async task: download firmware from URL and flash it via esp_https_ota
 static void ota_fetch_task(void *arg)
 {
     ota_fetch_arg_t *a   = (ota_fetch_arg_t *)arg;
@@ -699,89 +700,54 @@ static void ota_fetch_task(void *arg)
     s_ota_pct   = 0;
     snprintf(s_ota_msg, sizeof(s_ota_msg), "Connecting...");
 
-    const esp_partition_t *part = esp_ota_get_next_update_partition(NULL);
-    if (!part) {
-        snprintf(s_ota_msg, sizeof(s_ota_msg), "No OTA partition");
-        s_ota_state = OTA_STATE_ERROR;
-        goto done;
-    }
+    esp_ota_mark_app_valid_cancel_rollback();
 
-    esp_http_client_config_t cfg = {
+    esp_http_client_config_t http_cfg = {
         .url                   = url,
         .crt_bundle_attach     = esp_crt_bundle_attach,
         .timeout_ms            = 60000,
-        .buffer_size           = 4096,
-        .buffer_size_tx        = 1024,
-        .max_redirection_count = 5,
         .keep_alive_enable     = true,
+        .max_redirection_count = 5,
     };
-    esp_http_client_handle_t client = esp_http_client_init(&cfg);
+    esp_https_ota_config_t ota_cfg = {
+        .http_config = &http_cfg,
+    };
 
-    esp_err_t err = esp_http_client_open(client, 0);
-    if (err != ESP_OK) {
-        snprintf(s_ota_msg, sizeof(s_ota_msg), "Connect failed: %s", esp_err_to_name(err));
-        s_ota_state = OTA_STATE_ERROR;
-        esp_http_client_cleanup(client);
-        goto done;
-    }
-
-    int content_len = esp_http_client_fetch_headers(client);
-    int status      = esp_http_client_get_status_code(client);
-    if (status != 200) {
-        snprintf(s_ota_msg, sizeof(s_ota_msg), "HTTP %d", status);
-        s_ota_state = OTA_STATE_ERROR;
-        esp_http_client_close(client);
-        esp_http_client_cleanup(client);
-        goto done;
-    }
-
-    esp_ota_mark_app_valid_cancel_rollback();
-    esp_ota_handle_t hdl;
-    err = esp_ota_begin(part, OTA_WITH_SEQUENTIAL_WRITES, &hdl);
+    esp_https_ota_handle_t hdl;
+    esp_err_t err = esp_https_ota_begin(&ota_cfg, &hdl);
     if (err != ESP_OK) {
         snprintf(s_ota_msg, sizeof(s_ota_msg), "OTA begin: %s", esp_err_to_name(err));
         s_ota_state = OTA_STATE_ERROR;
-        esp_http_client_close(client);
-        esp_http_client_cleanup(client);
         goto done;
     }
 
     snprintf(s_ota_msg, sizeof(s_ota_msg), "Downloading...");
-    char *buf    = malloc(8192);
-    int   total  = 0, n;
-    while ((n = esp_http_client_read(client, buf, 8192)) > 0) {
-        err = esp_ota_write(hdl, buf, n);
-        if (err != ESP_OK) break;
-        total += n;
-        if (content_len > 0) s_ota_pct = total * 100 / content_len;
+    while (1) {
+        err = esp_https_ota_perform(hdl);
+        if (err == ESP_ERR_HTTPS_OTA_IN_PROGRESS) {
+            int img_size = esp_https_ota_get_image_size(hdl);
+            int img_read = esp_https_ota_get_image_len_read(hdl);
+            if (img_size > 0) s_ota_pct = img_read * 100 / img_size;
+            continue;
+        }
+        break;
     }
-    free(buf);
-    esp_http_client_close(client);
-    esp_http_client_cleanup(client);
 
+    if (!esp_https_ota_is_complete_data_received(hdl)) {
+        snprintf(s_ota_msg, sizeof(s_ota_msg), "Download incomplete — connection lost?");
+        esp_https_ota_abort(hdl);
+        s_ota_state = OTA_STATE_ERROR;
+        goto done;
+    }
+
+    err = esp_https_ota_finish(hdl);
     if (err != ESP_OK) {
-        snprintf(s_ota_msg, sizeof(s_ota_msg), "Write error: %s", esp_err_to_name(err));
-        esp_ota_abort(hdl);
+        snprintf(s_ota_msg, sizeof(s_ota_msg), "OTA finish: %s", esp_err_to_name(err));
         s_ota_state = OTA_STATE_ERROR;
         goto done;
     }
-    if (n < 0) {
-        snprintf(s_ota_msg, sizeof(s_ota_msg), "Download failed: connection lost");
-        esp_ota_abort(hdl);
-        s_ota_state = OTA_STATE_ERROR;
-        goto done;
-    }
-    if (esp_ota_end(hdl) != ESP_OK) {
-        snprintf(s_ota_msg, sizeof(s_ota_msg), "Verify failed — wrong binary?");
-        s_ota_state = OTA_STATE_ERROR;
-        goto done;
-    }
-    if (esp_ota_set_boot_partition(part) != ESP_OK) {
-        snprintf(s_ota_msg, sizeof(s_ota_msg), "Set boot partition failed");
-        s_ota_state = OTA_STATE_ERROR;
-        goto done;
-    }
-    s_ota_pct   = 100;
+
+    s_ota_pct = 100;
     if (erase) nvs_flash_erase();
     snprintf(s_ota_msg, sizeof(s_ota_msg), "Done. Rebooting...");
     s_ota_state = OTA_STATE_DONE;

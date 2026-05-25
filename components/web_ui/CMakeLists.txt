@@ -3,7 +3,7 @@ idf_component_register(
     INCLUDE_DIRS "include"
     REQUIRES storage hotkey jiggler wifi_manager ble_hid_host webhook mqtt_mgr
              esp_http_server esp_http_client esp_wifi esp_system
-             app_update mbedtls esp_app_format nvs_flash
+             app_update esp_https_ota mbedtls esp_app_format nvs_flash
              json freertos bootloader_support
     EMBED_TXTFILES "www/index.html"
 )
