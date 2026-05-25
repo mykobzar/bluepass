@@ -1,6 +1,5 @@
 #include "hotkey.h"
 #include "storage.h"
-#include "usb_hid_device.h"
 #include "totp.h"
 #include "jiggler.h"
 #include "webhook.h"
@@ -16,9 +15,15 @@
 #define TAG "hotkey"
 #define TYPE_QUEUE_LEN 4
 
-static hotkey_slot_t s_slots[HOTKEY_SLOTS_MAX];
-static int s_slot_count;
-static bool s_had_consumer;
+static hotkey_slot_t  s_slots[HOTKEY_SLOTS_MAX];
+static int            s_slot_count;
+static bool           s_had_consumer;
+static hid_output_ops_t s_out;
+
+void hotkey_engine_set_output(const hid_output_ops_t *ops)
+{
+    s_out = *ops;
+}
 
 static key_event_cb_t s_event_cb;
 static void *s_event_ctx;
@@ -38,16 +43,16 @@ static void typing_task(void *arg)
     type_job_t job;
     while (true) {
         if (xQueueReceive(s_type_queue, &job, portMAX_DELAY)) {
-            usb_hid_device_send_release(); // clear any held keys first
+            if (s_out.send_release) s_out.send_release();
             vTaskDelay(pdMS_TO_TICKS(20));
-            usb_hid_device_type_string(job.text);
-            if (job.restore_mods) {
+            if (s_out.type_string) s_out.type_string(job.text);
+            if (job.restore_mods && s_out.send_report) {
                 hid_keyboard_report_t mod_report = {
                     .modifier = job.restore_mods,
                     .reserved = 0,
                     .keycode  = {0},
                 };
-                usb_hid_device_send_report(&mod_report);
+                s_out.send_report(&mod_report);
             }
         }
     }
@@ -167,9 +172,9 @@ static void fire_substitution(const bluepass_hid_report_t *report,
 void hotkey_engine_process(const bluepass_hid_report_t *report)
 {
     if (is_all_zero(report)) {
-        usb_hid_device_send_report(&report->keyboard);
+        if (s_out.send_report) s_out.send_report(&report->keyboard);
         if (s_had_consumer) {
-            usb_hid_device_send_consumer(0);
+            if (s_out.send_consumer) s_out.send_consumer(0);
             s_had_consumer = false;
         }
         notify_event(report, false, false);
@@ -218,15 +223,15 @@ void hotkey_engine_process(const bluepass_hid_report_t *report)
         return;
     }
 
-    // No match — pass through to USB
+    // No match — pass through to output
     if (report->consumer_code == 0) {
-        usb_hid_device_send_report(&report->keyboard);
+        if (s_out.send_report) s_out.send_report(&report->keyboard);
         if (s_had_consumer) {
-            usb_hid_device_send_consumer(0);
+            if (s_out.send_consumer) s_out.send_consumer(0);
             s_had_consumer = false;
         }
     } else {
-        usb_hid_device_send_consumer(report->consumer_code);
+        if (s_out.send_consumer) s_out.send_consumer(report->consumer_code);
         s_had_consumer = true;
     }
     notify_event(report, false, false);

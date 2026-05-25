@@ -4,6 +4,18 @@
 #include <stdint.h>
 #include <stdbool.h>
 
+// Output abstraction — set before hotkey_engine_init() or at any time to switch modes.
+// All function pointers are required and must not be NULL.
+typedef struct {
+    esp_err_t (*send_report)  (const hid_keyboard_report_t *report);
+    esp_err_t (*send_consumer)(uint16_t usage_id);
+    esp_err_t (*send_release) (void);
+    esp_err_t (*type_string)  (const char *str);
+    bool      (*is_ready)     (void);
+} hid_output_ops_t;
+
+void hotkey_engine_set_output(const hid_output_ops_t *ops);
+
 typedef struct {
     int64_t timestamp_ms;
     bluepass_hid_report_t report;

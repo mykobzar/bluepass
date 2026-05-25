@@ -4,7 +4,9 @@ idf_component_register(
     REQUIRES
         storage
         ble_hid_host
+        ble_hid_device
         usb_hid_device
+        usb_hid_host
         hotkey
         wifi_manager
         web_ui

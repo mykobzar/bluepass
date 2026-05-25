@@ -83,6 +83,17 @@ typedef struct {
 esp_err_t storage_get_board_config(board_config_t *out);
 esp_err_t storage_set_board_config(const board_config_t *cfg);
 
+// ── Connection mode ───────────────────────────────────────────────────────────
+
+typedef enum {
+    CONN_MODE_BT_USB = 0,  // BT keyboard → USB computer (default)
+    CONN_MODE_BT_BT  = 1,  // BT keyboard → BT computer
+    CONN_MODE_USB_BT = 2,  // USB keyboard → BT computer
+} connection_mode_t;
+
+esp_err_t storage_get_connection_mode(connection_mode_t *out);
+esp_err_t storage_set_connection_mode(connection_mode_t mode);
+
 // ── Webhook ──────────────────────────────────────────────────────────────────
 
 #define WEBHOOK_SLOTS_MAX  4

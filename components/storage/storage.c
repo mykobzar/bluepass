@@ -348,3 +348,30 @@ esp_err_t storage_set_mqtt_in_slot(uint8_t idx, const mqtt_in_slot_t *slot)
 
 esp_err_t storage_delete_mqtt_in_slot(uint8_t idx)
 { return mqtt_slot_del("i", idx); }
+
+// ── Connection mode ───────────────────────────────────────────────────────────
+
+#define NS_CONN       "conn"
+#define KEY_CONN_MODE "mode"
+
+esp_err_t storage_get_connection_mode(connection_mode_t *out)
+{
+    *out = CONN_MODE_BT_USB;
+    nvs_handle_t h;
+    if (nvs_open(NS_CONN, NVS_READONLY, &h) != ESP_OK) return ESP_OK;
+    uint8_t v;
+    if (nvs_get_u8(h, KEY_CONN_MODE, &v) == ESP_OK && v <= CONN_MODE_USB_BT)
+        *out = (connection_mode_t)v;
+    nvs_close(h);
+    return ESP_OK;
+}
+
+esp_err_t storage_set_connection_mode(connection_mode_t mode)
+{
+    nvs_handle_t h;
+    ESP_RETURN_ON_ERROR(nvs_open(NS_CONN, NVS_READWRITE, &h), TAG, "open failed");
+    esp_err_t err = nvs_set_u8(h, KEY_CONN_MODE, (uint8_t)mode);
+    if (err == ESP_OK) err = nvs_commit(h);
+    nvs_close(h);
+    return err;
+}

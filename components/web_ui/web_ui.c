@@ -5,6 +5,8 @@
 #include "hotkey.h"
 #include "wifi_manager.h"
 #include "ble_hid_host.h"
+#include "ble_hid_device.h"
+#include "usb_hid_host.h"
 #include "webhook.h"
 #include "mqtt_mgr.h"
 #include "esp_log.h"
@@ -360,6 +362,86 @@ static esp_err_t handler_wifi_post(httpd_req_t *req)
     }
     send_ok(req);
     xTaskCreate(do_restart, "restart", 2048, NULL, 5, NULL);
+    return ESP_OK;
+}
+
+// ── Connection mode ───────────────────────────────────────────────────────────
+// GET  /api/connection → {"mode":0,"keyboard":"bt","computer":"usb"}
+// POST /api/connection → {"mode":1}  → saves to NVS, reboots
+
+static const char *conn_keyboard_str(connection_mode_t m)
+{ return (m == CONN_MODE_USB_BT) ? "usb" : "bt"; }
+
+static const char *conn_computer_str(connection_mode_t m)
+{ return (m == CONN_MODE_BT_USB) ? "usb" : "bt"; }
+
+static esp_err_t handler_connection_get(httpd_req_t *req)
+{
+    connection_mode_t mode;
+    storage_get_connection_mode(&mode);
+    cJSON *obj = cJSON_CreateObject();
+    cJSON_AddNumberToObject(obj, "mode",     (int)mode);
+    cJSON_AddStringToObject(obj, "keyboard", conn_keyboard_str(mode));
+    cJSON_AddStringToObject(obj, "computer", conn_computer_str(mode));
+    send_json(req, obj);
+    cJSON_Delete(obj);
+    return ESP_OK;
+}
+
+static esp_err_t handler_connection_set(httpd_req_t *req)
+{
+    char buf[64];
+    int len = httpd_req_recv(req, buf, sizeof(buf) - 1);
+    if (len <= 0) { httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "no body"); return ESP_FAIL; }
+    buf[len] = '\0';
+    cJSON *j = cJSON_Parse(buf);
+    if (!j) { httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "bad JSON"); return ESP_FAIL; }
+
+    cJSON *mode_j = cJSON_GetObjectItem(j, "mode");
+    if (!mode_j) { cJSON_Delete(j); httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "missing mode"); return ESP_FAIL; }
+
+    int mode_val = mode_j->valueint;
+    cJSON_Delete(j);
+
+    if (mode_val < 0 || mode_val > (int)CONN_MODE_USB_BT) {
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "invalid mode");
+        return ESP_FAIL;
+    }
+
+    storage_set_connection_mode((connection_mode_t)mode_val);
+    send_ok(req);
+    xTaskCreate(do_restart, "restart", 2048, NULL, 5, NULL);
+    return ESP_OK;
+}
+
+// GET /api/ble/device/status → {"advertising":bool,"connected":bool,"peer_addr":"..."}
+static esp_err_t handler_ble_device_status(httpd_req_t *req)
+{
+    char addr[20] = {0};
+    ble_hid_device_get_peer_addr(addr, sizeof(addr));
+    cJSON *obj = cJSON_CreateObject();
+    cJSON_AddBoolToObject(obj, "advertising", ble_hid_device_is_advertising());
+    cJSON_AddBoolToObject(obj, "connected",   ble_hid_device_is_connected());
+    cJSON_AddStringToObject(obj, "peer_addr", addr);
+    send_json(req, obj);
+    cJSON_Delete(obj);
+    return ESP_OK;
+}
+
+// POST /api/ble/device/advertise → restart advertising
+static esp_err_t handler_ble_device_advertise(httpd_req_t *req)
+{
+    ble_hid_device_start_advertising();
+    return send_ok(req);
+}
+
+// GET /api/usb/host/status → {"connected":bool}
+static esp_err_t handler_usb_host_status(httpd_req_t *req)
+{
+    cJSON *obj = cJSON_CreateObject();
+    cJSON_AddBoolToObject(obj, "connected", usb_hid_host_is_connected());
+    send_json(req, obj);
+    cJSON_Delete(obj);
     return ESP_OK;
 }
 
@@ -1163,7 +1245,7 @@ esp_err_t web_ui_start(void)
 
     httpd_config_t cfg = HTTPD_DEFAULT_CONFIG();
     cfg.uri_match_fn     = httpd_uri_match_wildcard;
-    cfg.max_uri_handlers = 42;
+    cfg.max_uri_handlers = 48;
     cfg.stack_size        = 8192;   // default 4096 overflows during OTA (buf[1024] + flash writes)
     cfg.recv_wait_timeout = 30;     // seconds; default 5 is too short for ~1.3 MB upload over WiFi
     cfg.send_wait_timeout = 30;
@@ -1181,11 +1263,16 @@ esp_err_t web_ui_start(void)
         { .uri = "/api/jiggler",   .method = HTTP_POST,   .handler = handler_jiggler_post },
         { .uri = "/api/wifi",       .method = HTTP_GET,    .handler = handler_wifi_get },
         { .uri = "/api/wifi",       .method = HTTP_POST,   .handler = handler_wifi_post },
-        { .uri = "/api/ble/scan",       .method = HTTP_GET,  .handler = handler_ble_scan },
-        { .uri = "/api/ble/connect",    .method = HTTP_POST, .handler = handler_ble_connect },
-        { .uri = "/api/ble/status",     .method = HTTP_GET,  .handler = handler_ble_status },
-        { .uri = "/api/ble/disconnect", .method = HTTP_POST, .handler = handler_ble_disconnect },
-        { .uri = "/api/ble/log",        .method = HTTP_GET,  .handler = handler_ble_log },
+        { .uri = "/api/connection",              .method = HTTP_GET,  .handler = handler_connection_get },
+        { .uri = "/api/connection",              .method = HTTP_POST, .handler = handler_connection_set },
+        { .uri = "/api/ble/scan",                .method = HTTP_GET,  .handler = handler_ble_scan },
+        { .uri = "/api/ble/connect",             .method = HTTP_POST, .handler = handler_ble_connect },
+        { .uri = "/api/ble/status",              .method = HTTP_GET,  .handler = handler_ble_status },
+        { .uri = "/api/ble/disconnect",          .method = HTTP_POST, .handler = handler_ble_disconnect },
+        { .uri = "/api/ble/log",                 .method = HTTP_GET,  .handler = handler_ble_log },
+        { .uri = "/api/ble/device/status",       .method = HTTP_GET,  .handler = handler_ble_device_status },
+        { .uri = "/api/ble/device/advertise",    .method = HTTP_POST, .handler = handler_ble_device_advertise },
+        { .uri = "/api/usb/host/status",         .method = HTTP_GET,  .handler = handler_usb_host_status },
         { .uri = "/api/ota",        .method = HTTP_POST,   .handler = handler_ota_upload },
         { .uri = "/api/ota/check",  .method = HTTP_GET,    .handler = handler_ota_check },
         { .uri = "/api/ota/fetch",  .method = HTTP_POST,   .handler = handler_ota_fetch },

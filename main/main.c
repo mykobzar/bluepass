@@ -9,7 +9,9 @@
 
 #include "storage.h"
 #include "ble_hid_host.h"
+#include "ble_hid_device.h"
 #include "usb_hid_device.h"
+#include "usb_hid_host.h"
 #include "hotkey.h"
 #include "wifi_manager.h"
 #include "web_ui.h"
@@ -25,24 +27,50 @@ static void on_jiggler_state(bool enabled)
 
 #define TAG "bluepass"
 
-#define LONG_PRESS_US      (10 * 1000 * 1000)  // 10 seconds in microseconds
+#define LONG_PRESS_US      (10 * 1000 * 1000)
 
-static gpio_num_t s_btn_gpio = GPIO_NUM_0;  // default; overridden from board config
+static gpio_num_t s_btn_gpio = GPIO_NUM_0;
 
 static esp_timer_handle_t s_btn_timer;
 static int64_t s_btn_press_us;
 static TaskHandle_t s_btn_task;
 
-// ── BLE report callback ───────────────────────────────────────────────────────
+// ── HID output tables ─────────────────────────────────────────────────────────
+
+static bool usb_is_ready(void) { return usb_hid_device_is_mounted(); }
+
+static const hid_output_ops_t s_usb_out = {
+    .send_report   = usb_hid_device_send_report,
+    .send_consumer = usb_hid_device_send_consumer,
+    .send_release  = usb_hid_device_send_release,
+    .type_string   = usb_hid_device_type_string,
+    .is_ready      = usb_is_ready,
+};
+
+static bool ble_dev_is_ready(void) { return ble_hid_device_is_connected(); }
+
+static const hid_output_ops_t s_ble_out = {
+    .send_report   = ble_hid_device_send_report,
+    .send_consumer = ble_hid_device_send_consumer,
+    .send_release  = ble_hid_device_send_release,
+    .type_string   = ble_hid_device_type_string,
+    .is_ready      = ble_dev_is_ready,
+};
+
+// ── Input callbacks ───────────────────────────────────────────────────────────
 
 static void on_ble_report(const bluepass_hid_report_t *report, void *ctx)
 {
     hotkey_engine_process(report);
 }
 
+static void on_usb_report(const bluepass_hid_report_t *report, void *ctx)
+{
+    hotkey_engine_process(report);
+}
+
 // ── Button handling ───────────────────────────────────────────────────────────
 
-// Runs in a normal task context — safe to call any function
 static void btn_task(void *arg)
 {
     for (;;) {
@@ -84,8 +112,6 @@ static void IRAM_ATTR btn_isr(void *arg)
     }
 }
 
-// ── GPIO / LED init ───────────────────────────────────────────────────────────
-
 static void gpio_init(void)
 {
     const gpio_config_t btn_cfg = {
@@ -95,7 +121,6 @@ static void gpio_init(void)
         .intr_type    = GPIO_INTR_ANYEDGE,
     };
     ESP_ERROR_CHECK(gpio_config(&btn_cfg));
-
     ESP_ERROR_CHECK(gpio_install_isr_service(0));
     ESP_ERROR_CHECK(gpio_isr_handler_add(s_btn_gpio, btn_isr, NULL));
 
@@ -110,7 +135,6 @@ static void gpio_init(void)
 
 void app_main(void)
 {
-    // NVS must be initialized before anything else touches flash
     esp_err_t err = nvs_flash_init();
     if (err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND) {
         ESP_ERROR_CHECK(nvs_flash_erase());
@@ -128,12 +152,36 @@ void app_main(void)
     xTaskCreate(btn_task, "btn", 4096, NULL, 5, &s_btn_task);
     gpio_init();
 
-    ESP_ERROR_CHECK(ble_hid_host_init(on_ble_report, NULL));
+    // Read connection mode and configure accordingly
+    connection_mode_t mode;
+    storage_get_connection_mode(&mode);
+    ESP_LOGI(TAG, "connection mode: %d", (int)mode);
+
+    // Wire output abstraction
+    if (mode == CONN_MODE_BT_USB) {
+        hotkey_engine_set_output(&s_usb_out);
+    } else {
+        hotkey_engine_set_output(&s_ble_out);
+    }
+
+    // Init BLE peripheral (for modes that output to a BT computer)
+    if (mode == CONN_MODE_BT_BT || mode == CONN_MODE_USB_BT) {
+        ESP_ERROR_CHECK(ble_hid_device_init());
+    }
+
+    // Init BLE central (for modes that input from a BT keyboard).
+    // When report_cb is NULL, NimBLE still starts but central role is skipped.
+    if (mode == CONN_MODE_BT_USB || mode == CONN_MODE_BT_BT) {
+        ESP_ERROR_CHECK(ble_hid_host_init(on_ble_report, NULL));
+    } else {
+        // USB_BT: NimBLE needed for peripheral only — no central role
+        ESP_ERROR_CHECK(ble_hid_host_init(NULL, NULL));
+    }
+
     ESP_ERROR_CHECK(hotkey_engine_init());
     ESP_ERROR_CHECK(jiggler_init());
     jiggler_set_state_cb(on_jiggler_state);
 
-    // Restore jiggler config including enabled state
     jiggler_config_t jig_cfg;
     if (storage_get_jiggler_config(&jig_cfg) == ESP_OK) {
         jiggler_configure(jig_cfg.keycode, jig_cfg.modifiers, jig_cfg.interval_ms);
@@ -145,18 +193,20 @@ void app_main(void)
     ESP_ERROR_CHECK(web_ui_init());
     ESP_ERROR_CHECK(wifi_manager_init());
 
-    // If no WiFi credentials stored, start AP + web UI immediately
     if (!storage_has_wifi_creds()) {
         ESP_LOGI(TAG, "no WiFi credentials — starting setup AP");
         ESP_ERROR_CHECK(wifi_manager_start_ap());
         ESP_ERROR_CHECK(web_ui_start());
     }
 
-    // TinyUSB last: it switches the USB PHY mux from JTAG/Serial to OTG,
-    // killing the serial monitor. All critical inits must complete first.
-    ESP_ERROR_CHECK(usb_hid_device_init());
+    // USB init — mode determines device vs host.
+    // TinyUSB switches USB PHY from JTAG to OTG; must be last.
+    if (mode == CONN_MODE_BT_USB) {
+        ESP_ERROR_CHECK(usb_hid_device_init());
+    } else if (mode == CONN_MODE_USB_BT) {
+        ESP_ERROR_CHECK(usb_hid_host_init(on_usb_report, NULL));
+    }
+    // CONN_MODE_BT_BT: no USB at all
 
-    // Confirm this boot was successful so the bootloader doesn't roll back,
-    // and so future esp_ota_begin() calls are not blocked.
     esp_ota_mark_app_valid_cancel_rollback();
 }

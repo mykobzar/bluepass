@@ -67,6 +67,10 @@ static struct {
 
 static esp_timer_handle_t s_reconnect_timer;
 static int                s_reconnect_attempts;
+
+#define SYNC_HOOKS_MAX 4
+static ble_sync_hook_t s_sync_hooks[SYNC_HOOKS_MAX];
+static int             s_sync_hook_count;
 #define RECONNECT_DELAY_US    1500000
 #define RECONNECT_RETRY_US    3000000
 
@@ -609,8 +613,9 @@ static void on_sync(void)
     uint8_t addr_type;
     ble_hs_id_infer_auto(0, &addr_type);
 
-    // If a peer was saved in NVS from a previous session, restore it and reconnect
-    if (!s_ctx.peer_known) {
+    // If a peer was saved in NVS from a previous session, restore it and reconnect.
+    // Skipped when report_cb is NULL (peripheral-only mode, no central role).
+    if (s_ctx.report_cb && !s_ctx.peer_known) {
         ble_peer_t p;
         if (storage_get_ble_peer(&p) == ESP_OK) {
             memcpy(s_ctx.peer_addr, p.addr, 6);
@@ -622,6 +627,9 @@ static void on_sync(void)
             schedule_reconnect(RECONNECT_DELAY_US);
         }
     }
+
+    for (int i = 0; i < s_sync_hook_count; i++)
+        s_sync_hooks[i]();
 }
 
 // ── Public API ────────────────────────────────────────────────────────────────
@@ -765,4 +773,10 @@ void ble_hid_host_get_log(char *buf, size_t len)
 {
     strncpy(buf, s_ble_log, len - 1);
     buf[len - 1] = '\0';
+}
+
+void ble_hid_host_add_sync_hook(ble_sync_hook_t fn)
+{
+    if (s_sync_hook_count < SYNC_HOOKS_MAX)
+        s_sync_hooks[s_sync_hook_count++] = fn;
 }
