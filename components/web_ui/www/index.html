@@ -419,27 +419,40 @@
   </table>
 
   <div id="sec-enable-section" style="display:none">
-    <div style="background:var(--bg2);border:1px solid var(--border);border-radius:4px;padding:0.9rem;margin-bottom:0.9rem;font-size:0.87rem">
-      <div style="font-weight:bold;margin-bottom:0.5rem;color:var(--text)">How to enable flash encryption</div>
-      <div style="color:var(--dim);line-height:1.65">
-        Encryption is enabled by the <b style="color:var(--text)">bootloader</b> on first boot — the web UI cannot do this directly.<br>
-        Flash the device once via USB with all four firmware files. The bootloader will generate the encryption key,
-        burn it into eFuse, encrypt the flash, and reboot into <b style="color:#ff8c00">Development mode</b> automatically.<br><br>
-        After that, you can optionally switch to Release mode from this tab.
+    <!-- Primary: web flasher -->
+    <div style="background:#0a1a0a;border:1px solid #2e6b2e;border-radius:4px;padding:0.9rem;margin-bottom:0.75rem;font-size:0.87rem">
+      <div style="font-weight:bold;margin-bottom:0.4rem;color:#4caf50">&#9733; Recommended method — browser web flasher (no drivers needed)</div>
+      <div style="color:#b8ddb8;line-height:1.65;margin-bottom:0.7rem">
+        Open the Bluepass install page and click <b style="color:#4caf50">Install with flash encryption</b>.
+        The browser flashes the device directly over USB. No Python, no drivers, no command line.<br>
+        After flashing, the bootloader generates an AES-XTS key, burns it into eFuse, encrypts the flash,
+        and reboots into <b style="color:#ff8c00">Development mode</b> automatically.
       </div>
-      <div style="margin-top:0.8rem">
-        <div style="color:var(--dim);font-size:0.82rem;margin-bottom:0.3rem">Flash command (Linux / macOS):</div>
+      <a href="https://mykobzar.github.io/bluepass/" target="_blank"
+         style="display:inline-block;background:#1b3d1b;border:1px solid #2e6b2e;color:#4caf50;padding:0.4rem 1rem;border-radius:3px;text-decoration:none;font-weight:bold">
+        Open web installer &#8599;
+      </a>
+    </div>
+    <!-- Secondary: esptool -->
+    <details style="margin-bottom:0.9rem">
+      <summary style="cursor:pointer;font-size:0.85rem;color:var(--dim);padding:0.4rem 0">Advanced: flash manually via esptool.py</summary>
+      <div style="background:var(--bg2);border:1px solid var(--border);border-radius:4px;padding:0.9rem;margin-top:0.5rem;font-size:0.87rem">
+        <div style="color:var(--dim);line-height:1.65;margin-bottom:0.6rem">
+          Download the <b style="color:var(--text)">-enc</b> firmware variant from
+          <a href="https://github.com/mykobzar/bluepass/tree/main/firmware" target="_blank">github.com/mykobzar/bluepass/tree/main/firmware</a>
+          and flash with <code>esptool.py</code> (Linux / macOS):
+        </div>
         <code style="display:block;background:#111;padding:0.5rem 0.7rem;border-radius:3px;font-size:0.8rem;line-height:1.7;color:var(--blue);white-space:pre-wrap">esptool.py --chip esp32s3 --port /dev/ttyUSB0 --baud 460800 write_flash \
   --flash_mode dio --flash_freq 80m --flash_size 4MB \
-  0x0     bootloader-0.9.14.bin \
-  0x8000  partition-table-0.9.14.bin \
-  0x10000 ota_data_initial-0.9.14.bin \
-  0x20000 bluepass-0.9.14.bin</code>
+  0x0     bootloader-1.1.0-beta-enc.bin \
+  0x8000  partition-table-1.1.0-beta-enc.bin \
+  0x10000 ota_data_initial-1.1.0-beta-enc.bin \
+  0x20000 bluepass-1.1.0-beta-enc.bin</code>
         <div style="color:var(--dim);font-size:0.82rem;margin-top:0.5rem">
-          Binaries: <a href="https://github.com/mykobzar/bluepass/releases/latest" target="_blank">github.com/mykobzar/bluepass/releases/latest</a>
+          Replace <code>/dev/ttyUSB0</code> with your actual serial port. On Windows use <code>COM3</code> (or whichever COMx appears in Device Manager).
         </div>
       </div>
-    </div>
+    </details>
   </div>
 
   <div id="sec-release-section" style="display:none">
@@ -1195,7 +1208,8 @@ async function loadSecurity() {
         statusEl.innerHTML =
           '<span style="color:#c55;font-weight:bold">&#9888;&#xFE0E; Flash encryption: DISABLED</span><br>' +
           '<span style="color:#ddb8b8;font-size:0.87rem">All data is stored in plaintext on the flash chip.<br>' +
-          'Passwords, TOTP secrets and settings are readable by anyone with physical access to the device.</span>';
+          'Passwords, TOTP secrets and settings are readable by anyone with physical access to the device.<br>' +
+          'Enable encryption by reflashing with the encrypted firmware variant — see instructions below.</span>';
         enableEl.style.display = 'block';
         break;
       case 'development':

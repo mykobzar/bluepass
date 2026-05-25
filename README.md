@@ -112,7 +112,10 @@ The ESP32-S3 native USB OTG port is used as the HID output. The same port is use
 
 1. Connect the ESP32-S3 board to your computer via USB-C.
 2. Open **[https://mykobzar.github.io/bluepass/](https://mykobzar.github.io/bluepass/)** in Chrome or Edge.
-3. Click **Connect & Install** and select the serial port when prompted.
+3. Choose one of two install options:
+   - **Connect & Install** — standard firmware, no encryption.
+   - **Install with flash encryption** — recommended for security-sensitive use; enables hardware AES-XTS encryption (see [Flash encryption](#flash-encryption) below).
+4. Select the serial port when prompted.
 
 The firmware is downloaded and flashed automatically — no Python, no toolchain, nothing to install.
 
@@ -139,18 +142,18 @@ Flash (replace the port with yours):
 # Linux / macOS
 esptool.py --chip esp32s3 --port /dev/ttyUSB0 --baud 460800 write_flash \
   --flash_mode dio --flash_freq 80m --flash_size 4MB \
-  0x0     firmware/bootloader-1.0.0.bin \
-  0x8000  firmware/partition-table-1.0.0.bin \
-  0x10000 firmware/ota_data_initial-1.0.0.bin \
-  0x20000 firmware/bluepass-1.0.0.bin
+  0x0     firmware/bootloader-1.1.0-beta.bin \
+  0x8000  firmware/partition-table-1.1.0-beta.bin \
+  0x10000 firmware/ota_data_initial-1.1.0-beta.bin \
+  0x20000 firmware/bluepass-1.1.0-beta.bin
 
 # Windows — use COM3, COM4, etc.
 esptool.py --chip esp32s3 --port COM3 --baud 460800 write_flash ^
   --flash_mode dio --flash_freq 80m --flash_size 4MB ^
-  0x0     firmware\bootloader-1.0.0.bin ^
-  0x8000  firmware\partition-table-1.0.0.bin ^
-  0x10000 firmware\ota_data_initial-1.0.0.bin ^
-  0x20000 firmware\bluepass-1.0.0.bin
+  0x0     firmware\bootloader-1.1.0-beta.bin ^
+  0x8000  firmware\partition-table-1.1.0-beta.bin ^
+  0x10000 firmware\ota_data_initial-1.1.0-beta.bin ^
+  0x20000 firmware\bluepass-1.1.0-beta.bin
 ```
 
 > **Windows GUI option:** see [`firmware/README.md`](firmware/README.md) for step-by-step instructions using the Espressif Flash Download Tool (no Python required).
@@ -422,7 +425,16 @@ bluepass supports ESP32 hardware AES-XTS flash encryption. The **Settings → Se
 | Development | Encrypted | Allowed | Allowed |
 | Release | Encrypted | **Disabled permanently** | **Disabled permanently** |
 
-Firmware ships with encryption in **Development mode** — data is encrypted, but UART reflashing is still possible. Switching to Release mode is irreversible: it permanently burns eFuse bits that disable UART download and JTAG. Only OTA updates remain possible after that.
+**Enabling encryption — recommended method (web flasher):**  
+Open **[https://mykobzar.github.io/bluepass/](https://mykobzar.github.io/bluepass/)** and click **Install with flash encryption**. No Python, no drivers. The browser flashes the encryption-enabled firmware directly; on first boot the bootloader generates an AES-XTS key, burns it into eFuse, encrypts the flash, and reboots into Development mode automatically.
+
+> **This is irreversible.** Once encryption is enabled it cannot be turned off.
+
+**Advanced — manual esptool.py method:**  
+Use the `-enc` firmware variant from [`firmware/`](firmware/) — see [`firmware/README.md`](firmware/README.md) for the full flash command.
+
+**Switching to Release mode:**  
+After enabling encryption, use **Settings → Security → Switch to Release Mode** to permanently disable UART flashing and JTAG. This burns additional eFuse bits that cannot be undone. Switching to Release mode is irreversible.
 
 > Verify that OTA firmware updates work correctly before switching to Release mode.
 
