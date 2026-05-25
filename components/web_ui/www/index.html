@@ -1081,7 +1081,7 @@ async function loadSlots() {
 }
 
 function firstFreeSlot() {
-  for (let i = 0; i < 16; i++) if (!s_usedSlots.has(i)) return i;
+  for (let i = 0; i < 32; i++) if (!s_usedSlots.has(i)) return i;
   return -1;
 }
 
@@ -1112,7 +1112,7 @@ function renderSlotList(id, slots, tabName) {
 async function addSlot(tabName) {
   const editIndex = s_editingSlot[tabName];
   const idx = editIndex !== null ? editIndex : firstFreeSlot();
-  if (idx < 0) { alert('All 16 slots are used. Delete one first.'); return; }
+  if (idx < 0) { alert('All 32 slots are used. Delete one first.'); return; }
   const pfx    = { passwords:'pw', text:'tx', totp:'tp' }[tabName];
   const parsed = parseHotkeyString(document.getElementById(pfx + '-hotkey').value);
   await fetch('/api/slots/' + idx, {
@@ -1636,13 +1636,13 @@ async function saveWebhookEnabled() {
 
 function firstFreeWhSlot() {
   const used = new Set(s_whSlotData.map(s => s.index));
-  for (let i = 0; i < 8; i++) if (!used.has(i)) return i;
+  for (let i = 0; i < 4; i++) if (!used.has(i)) return i;
   return -1;
 }
 
 async function saveWebhookSlot() {
   const idx = s_whEditIndex !== null ? s_whEditIndex : firstFreeWhSlot();
-  if (idx < 0) { alert('All 8 webhook slots are used. Delete one first.'); return; }
+  if (idx < 0) { alert('All 4 webhook slots are used. Delete one first.'); return; }
   const parsed = parseHotkeyString(document.getElementById('wh-hotkey').value);
   await fetch('/api/webhook/slots/' + idx, {
     method: 'PUT', headers: {'Content-Type':'application/json'},
@@ -1781,13 +1781,13 @@ async function saveMqttInEnabled() {
 
 function firstFreeMqttSlot(type) {
   const used = new Set(s_mqttSlots[type].map(s => s.index));
-  for (let i = 0; i < 8; i++) if (!used.has(i)) return i;
+  for (let i = 0; i < 4; i++) if (!used.has(i)) return i;
   return -1;
 }
 
 async function saveMqttOutSlot() {
   const idx = s_mqttOutEditIndex !== null ? s_mqttOutEditIndex : firstFreeMqttSlot('out');
-  if (idx < 0) { alert('All 8 MQTT Out slots are used. Delete one first.'); return; }
+  if (idx < 0) { alert('All 4 MQTT Out slots are used. Delete one first.'); return; }
   const parsed = parseHotkeyString(document.getElementById('mqtt-out-hotkey').value);
   await fetch('/api/mqtt/out/' + idx, {
     method: 'PUT', headers: {'Content-Type':'application/json'},
@@ -1833,7 +1833,7 @@ async function deleteMqttOutSlot(index) {
 
 async function saveMqttInSlot() {
   const idx = s_mqttInEditIndex !== null ? s_mqttInEditIndex : firstFreeMqttSlot('in');
-  if (idx < 0) { alert('All 8 MQTT In slots are used. Delete one first.'); return; }
+  if (idx < 0) { alert('All 4 MQTT In slots are used. Delete one first.'); return; }
   const parsed = parseHotkeyString(document.getElementById('mqtt-in-hotkey').value);
   await fetch('/api/mqtt/in/' + idx, {
     method: 'PUT', headers: {'Content-Type':'application/json'},

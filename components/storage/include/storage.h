@@ -3,7 +3,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-#define HOTKEY_SLOTS_MAX      16
+#define HOTKEY_SLOTS_MAX      32
 #define HOTKEY_PAYLOAD_MAX    128   // password / arbitrary text / base32 TOTP secret
 #define HOTKEY_LABEL_MAX      32
 
@@ -85,7 +85,7 @@ esp_err_t storage_set_board_config(const board_config_t *cfg);
 
 // ── Webhook ──────────────────────────────────────────────────────────────────
 
-#define WEBHOOK_SLOTS_MAX  8
+#define WEBHOOK_SLOTS_MAX  4
 #define WEBHOOK_URL_MAX    200
 #define WEBHOOK_VALUE_MAX  64
 #define WEBHOOK_LABEL_MAX  32
@@ -107,7 +107,7 @@ esp_err_t storage_delete_webhook_slot(uint8_t idx);
 
 // ── MQTT ─────────────────────────────────────────────────────────────────────
 
-#define MQTT_SLOTS_MAX      8
+#define MQTT_SLOTS_MAX      4
 #define MQTT_BROKER_URL_MAX 100
 #define MQTT_TOPIC_MAX      128
 #define MQTT_VALUE_MAX      128
