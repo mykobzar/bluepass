@@ -10,6 +10,7 @@ After flashing, use **Settings → Board** to configure the correct GPIO pins fo
 
 | Version | Date | Notes |
 |---|---|---|
+| **1.1.0-beta** | 2026-05-25 | Webhooks, MQTT Out/In; 32 hotkey slots; memory optimisations — beta, not yet promoted to OTA |
 | **1.0.0** | 2026-05-25 | First stable release; all 0.9.x features promoted to 1.0: BT→USB bridge, passwords, TOTP, jiggler, OTA, Info/Security/Board tabs |
 | 0.9.14 | 2026-05-23 | Board tab: configurable button GPIO, RGB LED with brightness, simple LED support; expanded README with compatible boards |
 | 0.9.13 | 2026-05-23 | Info tab: rename Log→Info, add WiFi and BLE status cards with RSSI |
