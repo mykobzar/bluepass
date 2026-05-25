@@ -3,6 +3,8 @@
 #include "usb_hid_device.h"
 #include "totp.h"
 #include "jiggler.h"
+#include "webhook.h"
+#include "mqtt_mgr.h"
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
@@ -197,6 +199,15 @@ void hotkey_engine_process(const bluepass_hid_report_t *report)
             jcfg.enabled = false;
             storage_set_jiggler_config(&jcfg);
         }
+        notify_event(report, true, false);
+        return;
+    }
+
+    if (webhook_dispatch(report)) {
+        notify_event(report, true, false);
+        return;
+    }
+    if (mqtt_mgr_out_dispatch(report)) {
         notify_event(report, true, false);
         return;
     }

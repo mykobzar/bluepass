@@ -14,6 +14,8 @@
 #include "wifi_manager.h"
 #include "web_ui.h"
 #include "jiggler.h"
+#include "webhook.h"
+#include "mqtt_mgr.h"
 #include "esp_ota_ops.h"
 
 static void on_jiggler_state(bool enabled)
@@ -138,6 +140,8 @@ void app_main(void)
         if (jig_cfg.enabled) jiggler_enable();
     }
 
+    ESP_ERROR_CHECK(webhook_init());
+    ESP_ERROR_CHECK(mqtt_mgr_init());
     ESP_ERROR_CHECK(web_ui_init());
     ESP_ERROR_CHECK(wifi_manager_init());
 

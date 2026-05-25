@@ -9,6 +9,8 @@ idf_component_register(
         wifi_manager
         web_ui
         jiggler
+        webhook
+        mqtt_mgr
         nvs_flash
         esp_event
         driver

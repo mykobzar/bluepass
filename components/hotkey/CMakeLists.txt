@@ -1,5 +1,5 @@
 idf_component_register(
     SRCS "hotkey.c"
     INCLUDE_DIRS "include"
-    REQUIRES hid_defs storage usb_hid_device totp jiggler
+    REQUIRES hid_defs storage usb_hid_device totp jiggler webhook mqtt_mgr
 )

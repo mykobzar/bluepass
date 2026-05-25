@@ -149,12 +149,18 @@
   <button onclick="show('list')">List</button>
   <button onclick="show('ble')">Bluetooth</button>
   <button onclick="show('wifi')">Settings</button>
+  <button id="nav-webhook" onclick="show('webhook')" style="display:none">Webhooks</button>
+  <button id="nav-mqtt-out" onclick="show('mqtt-out')" style="display:none">MQTT Out</button>
+  <button id="nav-mqtt-in" onclick="show('mqtt-in')" style="display:none">MQTT In</button>
 </nav>
 <nav id="settings-nav">
   <button onclick="show('wifi')">WiFi</button>
   <button onclick="show('ota')">Firmware</button>
   <button onclick="show('security')">Security</button>
   <button onclick="show('board')">Board</button>
+  <button onclick="show('webhook')">Webhook</button>
+  <button onclick="show('mqtt-out')">MQTT Out</button>
+  <button onclick="show('mqtt-in')">MQTT In</button>
 </nav>
 
 <!-- Info -->
@@ -519,6 +525,87 @@
   </div>
 </div>
 
+<!-- Webhook -->
+<div id="tab-webhook" class="tab">
+  <h3>Webhook</h3>
+  <div style="margin-bottom:1rem;display:flex;align-items:center;gap:0.8rem;flex-wrap:wrap">
+    <label style="display:inline-flex;align-items:center;gap:0.4rem;margin:0">
+      <input id="wh-enabled" type="checkbox"> Enable Webhooks
+    </label>
+    <button onclick="saveWebhookEnabled()">Save</button>
+    <span id="wh-cfg-status" class="status" style="margin:0"></span>
+  </div>
+  <div id="wh-list"></div>
+  <h4 id="wh-form-title">Add Slot</h4>
+  <label>Label <input id="wh-label" type="text"></label>
+  <label>Hotkey
+    <input id="wh-hotkey" type="text" placeholder="e.g. &lt;Ctrl&gt;+&lt;Shift&gt;+&lt;W&gt;">
+    <span class="hotkey-hint">Modifiers: &lt;Ctrl&gt; &lt;Shift&gt; &lt;Alt&gt; &lt;Win&gt; — use hex: &lt;0x15&gt;</span>
+  </label>
+  <label>URL <input id="wh-url" type="text" placeholder="https://example.com/hook"></label>
+  <label>Value <span style="color:var(--dim);font-size:0.82rem">(sent as <code>?value=…</code>; leave blank for no parameter)</span>
+    <input id="wh-value" type="text" placeholder="optional">
+  </label>
+  <button id="wh-add-btn" onclick="saveWebhookSlot()">Add</button>
+  <button id="wh-cancel-btn" onclick="cancelWebhookEdit()" style="display:none;margin-left:0.4rem">Cancel</button>
+</div>
+
+<!-- MQTT Out -->
+<div id="tab-mqtt-out" class="tab">
+  <h3>MQTT Out</h3>
+  <fieldset style="margin-bottom:1.2rem;padding:0.8rem 1rem;border:1px solid var(--border);border-radius:4px">
+    <legend style="padding:0 0.4rem;font-size:0.88rem;color:var(--dim)">Broker</legend>
+    <label>URL <input id="mqtt-broker-url" type="text" placeholder="mqtt://192.168.1.100:1883 or mqtts://…"></label>
+    <label>Username <input id="mqtt-username" type="text" autocomplete="off"></label>
+    <label>Password <input id="mqtt-password" type="password" placeholder="Leave blank to keep current" autocomplete="off"></label>
+    <div style="display:flex;align-items:center;gap:0.8rem;flex-wrap:wrap;margin-top:0.6rem">
+      <label style="display:inline-flex;align-items:center;gap:0.4rem;margin:0">
+        <input id="mqtt-out-enabled" type="checkbox"> Enable MQTT Out
+      </label>
+      <button onclick="saveMqttConfig()">Save</button>
+      <span id="mqtt-cfg-status" class="status" style="margin:0"></span>
+    </div>
+  </fieldset>
+  <div id="mqtt-conn-status" style="margin-bottom:0.8rem;font-size:0.9rem"></div>
+  <div id="mqtt-out-list"></div>
+  <h4 id="mqtt-out-form-title">Add Slot</h4>
+  <label>Label <input id="mqtt-out-label" type="text"></label>
+  <label>Hotkey
+    <input id="mqtt-out-hotkey" type="text" placeholder="e.g. &lt;Ctrl&gt;+&lt;Shift&gt;+&lt;M&gt;">
+    <span class="hotkey-hint">Modifiers: &lt;Ctrl&gt; &lt;Shift&gt; &lt;Alt&gt; &lt;Win&gt; — use hex: &lt;0x15&gt;</span>
+  </label>
+  <label>Topic <input id="mqtt-out-topic" type="text" placeholder="home/desk/key1"></label>
+  <label>Value <input id="mqtt-out-value" type="text" placeholder="1"></label>
+  <button id="mqtt-out-add-btn" onclick="saveMqttOutSlot()">Add</button>
+  <button id="mqtt-out-cancel-btn" onclick="cancelMqttOutEdit()" style="display:none;margin-left:0.4rem">Cancel</button>
+</div>
+
+<!-- MQTT In -->
+<div id="tab-mqtt-in" class="tab">
+  <h3>MQTT In</h3>
+  <div style="margin-bottom:1rem;display:flex;align-items:center;gap:0.8rem;flex-wrap:wrap">
+    <label style="display:inline-flex;align-items:center;gap:0.4rem;margin:0">
+      <input id="mqtt-in-enabled" type="checkbox"> Enable MQTT In
+    </label>
+    <button onclick="saveMqttInEnabled()">Save</button>
+    <span id="mqtt-in-cfg-status" class="status" style="margin:0"></span>
+    <span style="font-size:0.82rem;color:var(--dim)">Broker configured in MQTT Out tab</span>
+  </div>
+  <div id="mqtt-in-list"></div>
+  <h4 id="mqtt-in-form-title">Add Slot</h4>
+  <label>Label <input id="mqtt-in-label" type="text"></label>
+  <label>Subscribe topic <input id="mqtt-in-topic" type="text" placeholder="home/desk/button1"></label>
+  <label>Match value <span style="color:var(--dim);font-size:0.82rem">(leave empty to trigger on any message)</span>
+    <input id="mqtt-in-match" type="text" placeholder="1">
+  </label>
+  <label>Key to send
+    <input id="mqtt-in-hotkey" type="text" placeholder="e.g. &lt;Ctrl&gt;+&lt;A&gt; or &lt;0x04&gt;">
+    <span class="hotkey-hint">Modifiers: &lt;Ctrl&gt; &lt;Shift&gt; &lt;Alt&gt; &lt;Win&gt; — use hex: &lt;0x15&gt;</span>
+  </label>
+  <button id="mqtt-in-add-btn" onclick="saveMqttInSlot()">Add</button>
+  <button id="mqtt-in-cancel-btn" onclick="cancelMqttInEdit()" style="display:none;margin-left:0.4rem">Cancel</button>
+</div>
+
 <script>
 const TYPE_PASSWORD = 0, TYPE_TEXT = 1, TYPE_TOTP = 2;
 
@@ -738,13 +825,16 @@ function show(name) {
   document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
   document.getElementById('tab-' + name).classList.add('active');
   const mainNavVisible = document.getElementById('main-nav').style.display !== 'none';
+  const settingsTabs = ['wifi','ota','security','board','webhook','mqtt-out','mqtt-in'];
   document.getElementById('settings-nav').style.display =
-    (mainNavVisible && ['wifi','ota','security','board'].includes(name)) ? 'block' : 'none';
+    (mainNavVisible && settingsTabs.includes(name)) ? 'block' : 'none';
   if (name === 'log')      { loadInfoCards(); }
   if (name === 'ble')      { loadBleStatus(); loadBleLog(); }
   if (name === 'list')     { renderList(); }
   if (name === 'security') { loadSecurity(); }
   if (name === 'board')    { loadBoard(); }
+  if (name === 'webhook')  { loadWebhook(); }
+  if (name === 'mqtt-out' || name === 'mqtt-in') { loadMqtt(); }
   if (name === 'totp') {
     updateTotpClock();
     if (!s_totpTimer) s_totpTimer = setInterval(updateTotpClock, 1000);
@@ -789,6 +879,8 @@ async function initPage() {
       show('log');
       loadJiggler();
       loadSlots();
+      loadWebhook();
+      loadMqtt();
     }
   } catch (_) {
     document.getElementById('main-nav').style.display = 'block';
@@ -1493,6 +1585,296 @@ async function otaUpload() {
   };
   xhr.onerror = () => { otaShowProgress(false); st.textContent = 'Upload failed.'; };
   xhr.send(file);
+}
+
+// ── Webhook ────────────────────────────────────────────────────────────────────
+let s_whEditIndex = null;
+let s_whSlotData  = [];
+
+async function loadWebhook() {
+  try {
+    const r = await fetch('/api/webhook');
+    const d = await r.json();
+    document.getElementById('wh-enabled').checked = d.enabled;
+    document.getElementById('nav-webhook').style.display = d.enabled ? 'inline' : 'none';
+    s_whSlotData = d.slots || [];
+    renderWebhookSlots(s_whSlotData);
+  } catch(_) {}
+}
+
+function renderWebhookSlots(slots) {
+  const el = document.getElementById('wh-list');
+  if (!slots.length) { el.innerHTML = '<p>No slots yet.</p>'; return; }
+  el.innerHTML =
+    '<table><tr><th>Label</th><th>Hotkey</th><th>URL</th><th>Value</th><th></th></tr>'
+    + slots.map(s =>
+        '<tr>'
+        + '<td>' + htmlEsc(s.label) + '</td>'
+        + '<td>' + htmlEsc(formatCombo(s.modifiers, s.keycode)) + '</td>'
+        + '<td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + htmlEsc(s.url) + '</td>'
+        + '<td>' + htmlEsc(s.value) + '</td>'
+        + '<td>'
+        + '<button onclick="editWebhookSlot(' + s.index + ')">Edit</button> '
+        + '<button onclick="deleteWebhookSlot(' + s.index + ')">Delete</button>'
+        + '</td></tr>'
+      ).join('')
+    + '</table>';
+}
+
+async function saveWebhookEnabled() {
+  const enabled = document.getElementById('wh-enabled').checked;
+  const st = document.getElementById('wh-cfg-status');
+  try {
+    await fetch('/api/webhook', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ enabled })
+    });
+    st.textContent = 'Saved.';
+    document.getElementById('nav-webhook').style.display = enabled ? 'inline' : 'none';
+  } catch(e) { st.textContent = 'Error: ' + e; }
+}
+
+function firstFreeWhSlot() {
+  const used = new Set(s_whSlotData.map(s => s.index));
+  for (let i = 0; i < 8; i++) if (!used.has(i)) return i;
+  return -1;
+}
+
+async function saveWebhookSlot() {
+  const idx = s_whEditIndex !== null ? s_whEditIndex : firstFreeWhSlot();
+  if (idx < 0) { alert('All 8 webhook slots are used. Delete one first.'); return; }
+  const parsed = parseHotkeyString(document.getElementById('wh-hotkey').value);
+  await fetch('/api/webhook/slots/' + idx, {
+    method: 'PUT', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({
+      label:     document.getElementById('wh-label').value,
+      modifiers: parsed.mod, keycode: parsed.kc,
+      url:       document.getElementById('wh-url').value,
+      value:     document.getElementById('wh-value').value,
+    })
+  });
+  cancelWebhookEdit();
+  loadWebhook();
+}
+
+function editWebhookSlot(index) {
+  const s = s_whSlotData.find(x => x.index === index);
+  if (!s) return;
+  document.getElementById('wh-label').value  = s.label;
+  document.getElementById('wh-hotkey').value = formatComboRaw(s.modifiers, s.keycode);
+  document.getElementById('wh-url').value    = s.url;
+  document.getElementById('wh-value').value  = s.value;
+  s_whEditIndex = index;
+  document.getElementById('wh-form-title').textContent   = 'Edit Slot';
+  document.getElementById('wh-add-btn').textContent      = 'Save';
+  document.getElementById('wh-cancel-btn').style.display = 'inline';
+  document.getElementById('wh-form-title').scrollIntoView({behavior:'smooth'});
+}
+
+function cancelWebhookEdit() {
+  s_whEditIndex = null;
+  document.getElementById('wh-form-title').textContent   = 'Add Slot';
+  document.getElementById('wh-add-btn').textContent      = 'Add';
+  document.getElementById('wh-cancel-btn').style.display = 'none';
+  ['wh-label','wh-hotkey','wh-url','wh-value'].forEach(id => document.getElementById(id).value = '');
+}
+
+async function deleteWebhookSlot(index) {
+  if (!confirm('Delete this webhook slot?')) return;
+  await fetch('/api/webhook/slots/' + index, { method: 'DELETE' });
+  if (s_whEditIndex === index) cancelWebhookEdit();
+  loadWebhook();
+}
+
+// ── MQTT ──────────────────────────────────────────────────────────────────────
+let s_mqttOutEditIndex = null;
+let s_mqttInEditIndex  = null;
+let s_mqttSlots = { out: [], in: [] };
+
+async function loadMqtt() {
+  try {
+    const r = await fetch('/api/mqtt');
+    const d = await r.json();
+    document.getElementById('mqtt-broker-url').value    = d.broker_url || '';
+    document.getElementById('mqtt-username').value      = d.username   || '';
+    document.getElementById('mqtt-out-enabled').checked = d.out_enabled;
+    document.getElementById('mqtt-in-enabled').checked  = d.in_enabled;
+    const connEl = document.getElementById('mqtt-conn-status');
+    connEl.innerHTML = d.connected
+      ? '<span style="color:#4caf50">&#9679; MQTT Connected</span>'
+      : '<span style="color:#888">&#9675; MQTT Not connected</span>';
+    document.getElementById('nav-mqtt-out').style.display = d.out_enabled ? 'inline' : 'none';
+    document.getElementById('nav-mqtt-in').style.display  = d.in_enabled  ? 'inline' : 'none';
+    s_mqttSlots.out = d.out_slots || [];
+    s_mqttSlots.in  = d.in_slots  || [];
+    renderMqttOutSlots(s_mqttSlots.out);
+    renderMqttInSlots(s_mqttSlots.in);
+  } catch(_) {}
+}
+
+function renderMqttOutSlots(slots) {
+  const el = document.getElementById('mqtt-out-list');
+  if (!slots.length) { el.innerHTML = '<p>No slots yet.</p>'; return; }
+  el.innerHTML =
+    '<table><tr><th>Label</th><th>Hotkey</th><th>Topic</th><th>Value</th><th></th></tr>'
+    + slots.map(s =>
+        '<tr>'
+        + '<td>' + htmlEsc(s.label) + '</td>'
+        + '<td>' + htmlEsc(formatCombo(s.modifiers, s.keycode)) + '</td>'
+        + '<td>' + htmlEsc(s.topic) + '</td>'
+        + '<td>' + htmlEsc(s.value) + '</td>'
+        + '<td>'
+        + '<button onclick="editMqttOutSlot(' + s.index + ')">Edit</button> '
+        + '<button onclick="deleteMqttOutSlot(' + s.index + ')">Delete</button>'
+        + '</td></tr>'
+      ).join('')
+    + '</table>';
+}
+
+function renderMqttInSlots(slots) {
+  const el = document.getElementById('mqtt-in-list');
+  if (!slots.length) { el.innerHTML = '<p>No slots yet.</p>'; return; }
+  el.innerHTML =
+    '<table><tr><th>Label</th><th>Topic</th><th>Match</th><th>Key to send</th><th></th></tr>'
+    + slots.map(s =>
+        '<tr>'
+        + '<td>' + htmlEsc(s.label) + '</td>'
+        + '<td>' + htmlEsc(s.topic) + '</td>'
+        + '<td>' + htmlEsc(s.match_value || '(any)') + '</td>'
+        + '<td>' + htmlEsc(formatCombo(s.modifiers, s.keycode)) + '</td>'
+        + '<td>'
+        + '<button onclick="editMqttInSlot(' + s.index + ')">Edit</button> '
+        + '<button onclick="deleteMqttInSlot(' + s.index + ')">Delete</button>'
+        + '</td></tr>'
+      ).join('')
+    + '</table>';
+}
+
+async function saveMqttConfig() {
+  const st = document.getElementById('mqtt-cfg-status');
+  const pass = document.getElementById('mqtt-password').value;
+  const body = {
+    broker_url:  document.getElementById('mqtt-broker-url').value,
+    username:    document.getElementById('mqtt-username').value,
+    out_enabled: document.getElementById('mqtt-out-enabled').checked,
+    in_enabled:  document.getElementById('mqtt-in-enabled').checked,
+  };
+  if (pass) body.password = pass;
+  try {
+    const r = await fetch('/api/mqtt', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body) });
+    st.textContent = r.ok ? 'Saved.' : 'Error saving.';
+    document.getElementById('nav-mqtt-out').style.display = body.out_enabled ? 'inline' : 'none';
+    document.getElementById('nav-mqtt-in').style.display  = body.in_enabled  ? 'inline' : 'none';
+  } catch(e) { st.textContent = 'Error: ' + e; }
+}
+
+async function saveMqttInEnabled() {
+  const st = document.getElementById('mqtt-in-cfg-status');
+  const in_enabled = document.getElementById('mqtt-in-enabled').checked;
+  try {
+    const r = await fetch('/api/mqtt', { method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ in_enabled }) });
+    st.textContent = r.ok ? 'Saved.' : 'Error saving.';
+    document.getElementById('nav-mqtt-in').style.display = in_enabled ? 'inline' : 'none';
+  } catch(e) { st.textContent = 'Error: ' + e; }
+}
+
+function firstFreeMqttSlot(type) {
+  const used = new Set(s_mqttSlots[type].map(s => s.index));
+  for (let i = 0; i < 8; i++) if (!used.has(i)) return i;
+  return -1;
+}
+
+async function saveMqttOutSlot() {
+  const idx = s_mqttOutEditIndex !== null ? s_mqttOutEditIndex : firstFreeMqttSlot('out');
+  if (idx < 0) { alert('All 8 MQTT Out slots are used. Delete one first.'); return; }
+  const parsed = parseHotkeyString(document.getElementById('mqtt-out-hotkey').value);
+  await fetch('/api/mqtt/out/' + idx, {
+    method: 'PUT', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({
+      label:     document.getElementById('mqtt-out-label').value,
+      modifiers: parsed.mod, keycode: parsed.kc,
+      topic:     document.getElementById('mqtt-out-topic').value,
+      value:     document.getElementById('mqtt-out-value').value,
+    })
+  });
+  cancelMqttOutEdit();
+  loadMqtt();
+}
+
+function editMqttOutSlot(index) {
+  const s = s_mqttSlots.out.find(x => x.index === index);
+  if (!s) return;
+  document.getElementById('mqtt-out-label').value  = s.label;
+  document.getElementById('mqtt-out-hotkey').value = formatComboRaw(s.modifiers, s.keycode);
+  document.getElementById('mqtt-out-topic').value  = s.topic;
+  document.getElementById('mqtt-out-value').value  = s.value;
+  s_mqttOutEditIndex = index;
+  document.getElementById('mqtt-out-form-title').textContent   = 'Edit Slot';
+  document.getElementById('mqtt-out-add-btn').textContent      = 'Save';
+  document.getElementById('mqtt-out-cancel-btn').style.display = 'inline';
+  document.getElementById('mqtt-out-form-title').scrollIntoView({behavior:'smooth'});
+}
+
+function cancelMqttOutEdit() {
+  s_mqttOutEditIndex = null;
+  document.getElementById('mqtt-out-form-title').textContent   = 'Add Slot';
+  document.getElementById('mqtt-out-add-btn').textContent      = 'Add';
+  document.getElementById('mqtt-out-cancel-btn').style.display = 'none';
+  ['mqtt-out-label','mqtt-out-hotkey','mqtt-out-topic','mqtt-out-value'].forEach(id => document.getElementById(id).value = '');
+}
+
+async function deleteMqttOutSlot(index) {
+  if (!confirm('Delete this MQTT Out slot?')) return;
+  await fetch('/api/mqtt/out/' + index, { method: 'DELETE' });
+  if (s_mqttOutEditIndex === index) cancelMqttOutEdit();
+  loadMqtt();
+}
+
+async function saveMqttInSlot() {
+  const idx = s_mqttInEditIndex !== null ? s_mqttInEditIndex : firstFreeMqttSlot('in');
+  if (idx < 0) { alert('All 8 MQTT In slots are used. Delete one first.'); return; }
+  const parsed = parseHotkeyString(document.getElementById('mqtt-in-hotkey').value);
+  await fetch('/api/mqtt/in/' + idx, {
+    method: 'PUT', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({
+      label:       document.getElementById('mqtt-in-label').value,
+      topic:       document.getElementById('mqtt-in-topic').value,
+      match_value: document.getElementById('mqtt-in-match').value,
+      modifiers:   parsed.mod, keycode: parsed.kc,
+    })
+  });
+  cancelMqttInEdit();
+  loadMqtt();
+}
+
+function editMqttInSlot(index) {
+  const s = s_mqttSlots.in.find(x => x.index === index);
+  if (!s) return;
+  document.getElementById('mqtt-in-label').value  = s.label;
+  document.getElementById('mqtt-in-topic').value  = s.topic;
+  document.getElementById('mqtt-in-match').value  = s.match_value || '';
+  document.getElementById('mqtt-in-hotkey').value = formatComboRaw(s.modifiers, s.keycode);
+  s_mqttInEditIndex = index;
+  document.getElementById('mqtt-in-form-title').textContent   = 'Edit Slot';
+  document.getElementById('mqtt-in-add-btn').textContent      = 'Save';
+  document.getElementById('mqtt-in-cancel-btn').style.display = 'inline';
+  document.getElementById('mqtt-in-form-title').scrollIntoView({behavior:'smooth'});
+}
+
+function cancelMqttInEdit() {
+  s_mqttInEditIndex = null;
+  document.getElementById('mqtt-in-form-title').textContent   = 'Add Slot';
+  document.getElementById('mqtt-in-add-btn').textContent      = 'Add';
+  document.getElementById('mqtt-in-cancel-btn').style.display = 'none';
+  ['mqtt-in-label','mqtt-in-topic','mqtt-in-match','mqtt-in-hotkey'].forEach(id => document.getElementById(id).value = '');
+}
+
+async function deleteMqttInSlot(index) {
+  if (!confirm('Delete this MQTT In slot?')) return;
+  await fetch('/api/mqtt/in/' + index, { method: 'DELETE' });
+  if (s_mqttInEditIndex === index) cancelMqttInEdit();
+  loadMqtt();
 }
 
 loadVersion();

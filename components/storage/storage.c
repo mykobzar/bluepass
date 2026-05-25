@@ -170,6 +170,9 @@ esp_err_t storage_clear_ble_peer(void)
     return err;
 }
 
+#define NS_WEBHOOK "webhook"
+#define NS_MQTT    "mqtt"
+
 static void board_config_defaults(board_config_t *cfg)
 {
     cfg->btn_gpio          = 0;
@@ -203,3 +206,145 @@ esp_err_t storage_set_board_config(const board_config_t *cfg)
     nvs_close(h);
     return err;
 }
+
+// ── Webhook ───────────────────────────────────────────────────────────────────
+
+esp_err_t storage_get_webhook_enabled(bool *out)
+{
+    *out = false;
+    nvs_handle_t h;
+    if (nvs_open(NS_WEBHOOK, NVS_READONLY, &h) != ESP_OK) return ESP_OK;
+    uint8_t v = 0;
+    nvs_get_u8(h, "en", &v);
+    nvs_close(h);
+    *out = (v != 0);
+    return ESP_OK;
+}
+
+esp_err_t storage_set_webhook_enabled(bool enabled)
+{
+    nvs_handle_t h;
+    ESP_RETURN_ON_ERROR(nvs_open(NS_WEBHOOK, NVS_READWRITE, &h), TAG, "open failed");
+    esp_err_t err = nvs_set_u8(h, "en", enabled ? 1 : 0);
+    if (err == ESP_OK) err = nvs_commit(h);
+    nvs_close(h);
+    return err;
+}
+
+esp_err_t storage_get_webhook_slot(uint8_t idx, webhook_slot_t *out)
+{
+    if (idx >= WEBHOOK_SLOTS_MAX) return ESP_ERR_INVALID_ARG;
+    memset(out, 0, sizeof(*out));
+    nvs_handle_t h;
+    if (nvs_open(NS_WEBHOOK, NVS_READONLY, &h) != ESP_OK) return ESP_ERR_NVS_NOT_FOUND;
+    char key[6]; snprintf(key, sizeof(key), "w%u", idx);
+    size_t len = sizeof(*out);
+    esp_err_t err = nvs_get_blob(h, key, out, &len);
+    nvs_close(h);
+    return err;
+}
+
+esp_err_t storage_set_webhook_slot(uint8_t idx, const webhook_slot_t *slot)
+{
+    if (idx >= WEBHOOK_SLOTS_MAX) return ESP_ERR_INVALID_ARG;
+    nvs_handle_t h;
+    ESP_RETURN_ON_ERROR(nvs_open(NS_WEBHOOK, NVS_READWRITE, &h), TAG, "open failed");
+    char key[6]; snprintf(key, sizeof(key), "w%u", idx);
+    esp_err_t err = nvs_set_blob(h, key, slot, sizeof(*slot));
+    if (err == ESP_OK) err = nvs_commit(h);
+    nvs_close(h);
+    return err;
+}
+
+esp_err_t storage_delete_webhook_slot(uint8_t idx)
+{
+    if (idx >= WEBHOOK_SLOTS_MAX) return ESP_ERR_INVALID_ARG;
+    nvs_handle_t h;
+    ESP_RETURN_ON_ERROR(nvs_open(NS_WEBHOOK, NVS_READWRITE, &h), TAG, "open failed");
+    char key[6]; snprintf(key, sizeof(key), "w%u", idx);
+    esp_err_t err = nvs_erase_key(h, key);
+    if (err == ESP_ERR_NVS_NOT_FOUND) err = ESP_OK;
+    if (err == ESP_OK) err = nvs_commit(h);
+    nvs_close(h);
+    return err;
+}
+
+// ── MQTT ──────────────────────────────────────────────────────────────────────
+
+esp_err_t storage_get_mqtt_broker(mqtt_broker_config_t *out)
+{
+    memset(out, 0, sizeof(*out));
+    nvs_handle_t h;
+    if (nvs_open(NS_MQTT, NVS_READONLY, &h) != ESP_OK) return ESP_OK;
+    size_t len = sizeof(*out);
+    nvs_get_blob(h, "broker", out, &len);
+    nvs_close(h);
+    return ESP_OK;
+}
+
+esp_err_t storage_set_mqtt_broker(const mqtt_broker_config_t *cfg)
+{
+    nvs_handle_t h;
+    ESP_RETURN_ON_ERROR(nvs_open(NS_MQTT, NVS_READWRITE, &h), TAG, "open failed");
+    esp_err_t err = nvs_set_blob(h, "broker", cfg, sizeof(*cfg));
+    if (err == ESP_OK) err = nvs_commit(h);
+    nvs_close(h);
+    return err;
+}
+
+static esp_err_t mqtt_slot_get(const char *ns_key_prefix, uint8_t idx,
+                                void *out, size_t sz)
+{
+    if (idx >= MQTT_SLOTS_MAX) return ESP_ERR_INVALID_ARG;
+    memset(out, 0, sz);
+    nvs_handle_t h;
+    if (nvs_open(NS_MQTT, NVS_READONLY, &h) != ESP_OK) return ESP_ERR_NVS_NOT_FOUND;
+    char key[8]; snprintf(key, sizeof(key), "%s%u", ns_key_prefix, idx);
+    esp_err_t err = nvs_get_blob(h, key, out, &(size_t){sz});
+    nvs_close(h);
+    return err;
+}
+
+static esp_err_t mqtt_slot_set(const char *ns_key_prefix, uint8_t idx,
+                                const void *data, size_t sz)
+{
+    if (idx >= MQTT_SLOTS_MAX) return ESP_ERR_INVALID_ARG;
+    nvs_handle_t h;
+    ESP_RETURN_ON_ERROR(nvs_open(NS_MQTT, NVS_READWRITE, &h), TAG, "open failed");
+    char key[8]; snprintf(key, sizeof(key), "%s%u", ns_key_prefix, idx);
+    esp_err_t err = nvs_set_blob(h, key, data, sz);
+    if (err == ESP_OK) err = nvs_commit(h);
+    nvs_close(h);
+    return err;
+}
+
+static esp_err_t mqtt_slot_del(const char *ns_key_prefix, uint8_t idx)
+{
+    if (idx >= MQTT_SLOTS_MAX) return ESP_ERR_INVALID_ARG;
+    nvs_handle_t h;
+    ESP_RETURN_ON_ERROR(nvs_open(NS_MQTT, NVS_READWRITE, &h), TAG, "open failed");
+    char key[8]; snprintf(key, sizeof(key), "%s%u", ns_key_prefix, idx);
+    esp_err_t err = nvs_erase_key(h, key);
+    if (err == ESP_ERR_NVS_NOT_FOUND) err = ESP_OK;
+    if (err == ESP_OK) err = nvs_commit(h);
+    nvs_close(h);
+    return err;
+}
+
+esp_err_t storage_get_mqtt_out_slot(uint8_t idx, mqtt_out_slot_t *out)
+{ return mqtt_slot_get("o", idx, out, sizeof(*out)); }
+
+esp_err_t storage_set_mqtt_out_slot(uint8_t idx, const mqtt_out_slot_t *slot)
+{ return mqtt_slot_set("o", idx, slot, sizeof(*slot)); }
+
+esp_err_t storage_delete_mqtt_out_slot(uint8_t idx)
+{ return mqtt_slot_del("o", idx); }
+
+esp_err_t storage_get_mqtt_in_slot(uint8_t idx, mqtt_in_slot_t *out)
+{ return mqtt_slot_get("i", idx, out, sizeof(*out)); }
+
+esp_err_t storage_set_mqtt_in_slot(uint8_t idx, const mqtt_in_slot_t *slot)
+{ return mqtt_slot_set("i", idx, slot, sizeof(*slot)); }
+
+esp_err_t storage_delete_mqtt_in_slot(uint8_t idx)
+{ return mqtt_slot_del("i", idx); }

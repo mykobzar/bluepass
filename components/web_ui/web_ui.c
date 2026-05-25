@@ -5,6 +5,8 @@
 #include "hotkey.h"
 #include "wifi_manager.h"
 #include "ble_hid_host.h"
+#include "webhook.h"
+#include "mqtt_mgr.h"
 #include "esp_log.h"
 #include "esp_check.h"
 #include "esp_http_server.h"
@@ -909,6 +911,265 @@ static esp_err_t handler_ota_fetch(httpd_req_t *req)
     return send_ok(req);
 }
 
+// ── Webhook API ───────────────────────────────────────────────────────────────
+// GET  /api/webhook          → {enabled, slots:[...]}
+// POST /api/webhook          → {enabled:bool}
+// PUT  /api/webhook/slots/{n} → create/update slot n
+// DELETE /api/webhook/slots/{n} → delete slot n
+
+static esp_err_t handler_webhook_get(httpd_req_t *req)
+{
+    bool enabled = false;
+    storage_get_webhook_enabled(&enabled);
+    cJSON *obj = cJSON_CreateObject();
+    cJSON_AddBoolToObject(obj, "enabled", enabled);
+    cJSON *arr = cJSON_AddArrayToObject(obj, "slots");
+    for (int i = 0; i < WEBHOOK_SLOTS_MAX; i++) {
+        webhook_slot_t s = {0};
+        if (storage_get_webhook_slot(i, &s) != ESP_OK || !s.active) continue;
+        cJSON *item = cJSON_CreateObject();
+        cJSON_AddNumberToObject(item, "index",     i);
+        cJSON_AddStringToObject(item, "label",     s.label);
+        cJSON_AddNumberToObject(item, "modifiers", s.modifiers);
+        cJSON_AddNumberToObject(item, "keycode",   s.keycode);
+        cJSON_AddStringToObject(item, "url",       s.url);
+        cJSON_AddStringToObject(item, "value",     s.value);
+        cJSON_AddItemToArray(arr, item);
+    }
+    send_json(req, obj);
+    cJSON_Delete(obj);
+    return ESP_OK;
+}
+
+static esp_err_t handler_webhook_post(httpd_req_t *req)
+{
+    char body[64];
+    int n = httpd_req_recv(req, body, sizeof(body) - 1);
+    if (n <= 0) { httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "empty"); return ESP_FAIL; }
+    body[n] = '\0';
+    cJSON *json = cJSON_Parse(body);
+    if (!json) { httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "JSON"); return ESP_FAIL; }
+    cJSON *en = cJSON_GetObjectItem(json, "enabled");
+    if (en) storage_set_webhook_enabled(cJSON_IsTrue(en) ? true : false);
+    cJSON_Delete(json);
+    webhook_reload();
+    return send_ok(req);
+}
+
+static esp_err_t handler_webhook_slot_put(httpd_req_t *req)
+{
+    int index = -1;
+    sscanf(req->uri + strlen("/api/webhook/slots/"), "%d", &index);
+    if (index < 0 || index >= WEBHOOK_SLOTS_MAX) {
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "invalid index");
+        return ESP_FAIL;
+    }
+    char body[512];
+    int n = httpd_req_recv(req, body, sizeof(body) - 1);
+    if (n <= 0) { httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "empty"); return ESP_FAIL; }
+    body[n] = '\0';
+    cJSON *json = cJSON_Parse(body);
+    if (!json) { httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "JSON"); return ESP_FAIL; }
+
+    webhook_slot_t s = {0};
+    s.active = true;
+    cJSON *v;
+    if ((v = cJSON_GetObjectItem(json, "modifiers")) && cJSON_IsNumber(v)) s.modifiers = (uint8_t)v->valueint;
+    if ((v = cJSON_GetObjectItem(json, "keycode"))   && cJSON_IsNumber(v)) s.keycode   = (uint8_t)v->valueint;
+    if ((v = cJSON_GetObjectItem(json, "label"))     && cJSON_IsString(v)) strncpy(s.label, v->valuestring, sizeof(s.label) - 1);
+    if ((v = cJSON_GetObjectItem(json, "url"))       && cJSON_IsString(v)) strncpy(s.url,   v->valuestring, sizeof(s.url)   - 1);
+    if ((v = cJSON_GetObjectItem(json, "value"))     && cJSON_IsString(v)) strncpy(s.value, v->valuestring, sizeof(s.value) - 1);
+    cJSON_Delete(json);
+
+    esp_err_t err = storage_set_webhook_slot(index, &s);
+    if (err != ESP_OK) { httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "storage"); return err; }
+    webhook_reload();
+    return send_ok(req);
+}
+
+static esp_err_t handler_webhook_slot_delete(httpd_req_t *req)
+{
+    int index = -1;
+    sscanf(req->uri + strlen("/api/webhook/slots/"), "%d", &index);
+    if (index < 0 || index >= WEBHOOK_SLOTS_MAX) {
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "invalid index");
+        return ESP_FAIL;
+    }
+    storage_delete_webhook_slot(index);
+    webhook_reload();
+    return send_ok(req);
+}
+
+// ── MQTT API ──────────────────────────────────────────────────────────────────
+// GET  /api/mqtt              → {broker_url, username, out_enabled, in_enabled, connected, out_slots:[...], in_slots:[...]}
+// POST /api/mqtt              → broker config + enable flags
+// PUT  /api/mqtt/out/{n}      → create/update out slot n
+// DELETE /api/mqtt/out/{n}    → delete out slot n
+// PUT  /api/mqtt/in/{n}       → create/update in slot n
+// DELETE /api/mqtt/in/{n}     → delete in slot n
+
+static esp_err_t handler_mqtt_get(httpd_req_t *req)
+{
+    mqtt_broker_config_t broker = {0};
+    storage_get_mqtt_broker(&broker);
+    cJSON *obj = cJSON_CreateObject();
+    cJSON_AddStringToObject(obj, "broker_url",   broker.broker_url);
+    cJSON_AddStringToObject(obj, "username",     broker.username);
+    cJSON_AddBoolToObject  (obj, "out_enabled",  broker.out_enabled);
+    cJSON_AddBoolToObject  (obj, "in_enabled",   broker.in_enabled);
+    cJSON_AddBoolToObject  (obj, "connected",    mqtt_mgr_is_connected());
+
+    cJSON *out_arr = cJSON_AddArrayToObject(obj, "out_slots");
+    for (int i = 0; i < MQTT_SLOTS_MAX; i++) {
+        mqtt_out_slot_t s = {0};
+        if (storage_get_mqtt_out_slot(i, &s) != ESP_OK || !s.active) continue;
+        cJSON *item = cJSON_CreateObject();
+        cJSON_AddNumberToObject(item, "index",     i);
+        cJSON_AddStringToObject(item, "label",     s.label);
+        cJSON_AddNumberToObject(item, "modifiers", s.modifiers);
+        cJSON_AddNumberToObject(item, "keycode",   s.keycode);
+        cJSON_AddStringToObject(item, "topic",     s.topic);
+        cJSON_AddStringToObject(item, "value",     s.value);
+        cJSON_AddItemToArray(out_arr, item);
+    }
+
+    cJSON *in_arr = cJSON_AddArrayToObject(obj, "in_slots");
+    for (int i = 0; i < MQTT_SLOTS_MAX; i++) {
+        mqtt_in_slot_t s = {0};
+        if (storage_get_mqtt_in_slot(i, &s) != ESP_OK || !s.active) continue;
+        cJSON *item = cJSON_CreateObject();
+        cJSON_AddNumberToObject(item, "index",       i);
+        cJSON_AddStringToObject(item, "label",       s.label);
+        cJSON_AddStringToObject(item, "topic",       s.topic);
+        cJSON_AddStringToObject(item, "match_value", s.match_value);
+        cJSON_AddNumberToObject(item, "modifiers",   s.modifiers);
+        cJSON_AddNumberToObject(item, "keycode",     s.keycode);
+        cJSON_AddItemToArray(in_arr, item);
+    }
+
+    send_json(req, obj);
+    cJSON_Delete(obj);
+    return ESP_OK;
+}
+
+static esp_err_t handler_mqtt_post(httpd_req_t *req)
+{
+    char body[512];
+    int n = httpd_req_recv(req, body, sizeof(body) - 1);
+    if (n <= 0) { httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "empty"); return ESP_FAIL; }
+    body[n] = '\0';
+    cJSON *json = cJSON_Parse(body);
+    if (!json) { httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "JSON"); return ESP_FAIL; }
+
+    mqtt_broker_config_t broker = {0};
+    storage_get_mqtt_broker(&broker);
+
+    cJSON *v;
+    if ((v = cJSON_GetObjectItem(json, "broker_url")) && cJSON_IsString(v))
+        strncpy(broker.broker_url, v->valuestring, sizeof(broker.broker_url) - 1);
+    if ((v = cJSON_GetObjectItem(json, "username"))   && cJSON_IsString(v))
+        strncpy(broker.username,   v->valuestring, sizeof(broker.username) - 1);
+    if ((v = cJSON_GetObjectItem(json, "password"))   && cJSON_IsString(v) && v->valuestring[0])
+        strncpy(broker.password,   v->valuestring, sizeof(broker.password) - 1);
+    if ((v = cJSON_GetObjectItem(json, "out_enabled")) && cJSON_IsBool(v))
+        broker.out_enabled = cJSON_IsTrue(v) ? 1 : 0;
+    if ((v = cJSON_GetObjectItem(json, "in_enabled"))  && cJSON_IsBool(v))
+        broker.in_enabled  = cJSON_IsTrue(v) ? 1 : 0;
+    cJSON_Delete(json);
+
+    storage_set_mqtt_broker(&broker);
+    mqtt_mgr_reload();
+    return send_ok(req);
+}
+
+static esp_err_t handler_mqtt_out_put(httpd_req_t *req)
+{
+    int index = -1;
+    sscanf(req->uri + strlen("/api/mqtt/out/"), "%d", &index);
+    if (index < 0 || index >= MQTT_SLOTS_MAX) {
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "invalid index");
+        return ESP_FAIL;
+    }
+    char body[512];
+    int n = httpd_req_recv(req, body, sizeof(body) - 1);
+    if (n <= 0) { httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "empty"); return ESP_FAIL; }
+    body[n] = '\0';
+    cJSON *json = cJSON_Parse(body);
+    if (!json) { httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "JSON"); return ESP_FAIL; }
+
+    mqtt_out_slot_t s = {0};
+    s.active = true;
+    cJSON *v;
+    if ((v = cJSON_GetObjectItem(json, "modifiers")) && cJSON_IsNumber(v)) s.modifiers = (uint8_t)v->valueint;
+    if ((v = cJSON_GetObjectItem(json, "keycode"))   && cJSON_IsNumber(v)) s.keycode   = (uint8_t)v->valueint;
+    if ((v = cJSON_GetObjectItem(json, "label"))     && cJSON_IsString(v)) strncpy(s.label, v->valuestring, sizeof(s.label) - 1);
+    if ((v = cJSON_GetObjectItem(json, "topic"))     && cJSON_IsString(v)) strncpy(s.topic, v->valuestring, sizeof(s.topic) - 1);
+    if ((v = cJSON_GetObjectItem(json, "value"))     && cJSON_IsString(v)) strncpy(s.value, v->valuestring, sizeof(s.value) - 1);
+    cJSON_Delete(json);
+
+    esp_err_t err = storage_set_mqtt_out_slot(index, &s);
+    if (err != ESP_OK) { httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "storage"); return err; }
+    mqtt_mgr_reload();
+    return send_ok(req);
+}
+
+static esp_err_t handler_mqtt_out_delete(httpd_req_t *req)
+{
+    int index = -1;
+    sscanf(req->uri + strlen("/api/mqtt/out/"), "%d", &index);
+    if (index < 0 || index >= MQTT_SLOTS_MAX) {
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "invalid index");
+        return ESP_FAIL;
+    }
+    storage_delete_mqtt_out_slot(index);
+    mqtt_mgr_reload();
+    return send_ok(req);
+}
+
+static esp_err_t handler_mqtt_in_put(httpd_req_t *req)
+{
+    int index = -1;
+    sscanf(req->uri + strlen("/api/mqtt/in/"), "%d", &index);
+    if (index < 0 || index >= MQTT_SLOTS_MAX) {
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "invalid index");
+        return ESP_FAIL;
+    }
+    char body[512];
+    int n = httpd_req_recv(req, body, sizeof(body) - 1);
+    if (n <= 0) { httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "empty"); return ESP_FAIL; }
+    body[n] = '\0';
+    cJSON *json = cJSON_Parse(body);
+    if (!json) { httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "JSON"); return ESP_FAIL; }
+
+    mqtt_in_slot_t s = {0};
+    s.active = true;
+    cJSON *v;
+    if ((v = cJSON_GetObjectItem(json, "modifiers"))   && cJSON_IsNumber(v)) s.modifiers = (uint8_t)v->valueint;
+    if ((v = cJSON_GetObjectItem(json, "keycode"))     && cJSON_IsNumber(v)) s.keycode   = (uint8_t)v->valueint;
+    if ((v = cJSON_GetObjectItem(json, "label"))       && cJSON_IsString(v)) strncpy(s.label,       v->valuestring, sizeof(s.label)       - 1);
+    if ((v = cJSON_GetObjectItem(json, "topic"))       && cJSON_IsString(v)) strncpy(s.topic,       v->valuestring, sizeof(s.topic)       - 1);
+    if ((v = cJSON_GetObjectItem(json, "match_value")) && cJSON_IsString(v)) strncpy(s.match_value, v->valuestring, sizeof(s.match_value) - 1);
+    cJSON_Delete(json);
+
+    esp_err_t err = storage_set_mqtt_in_slot(index, &s);
+    if (err != ESP_OK) { httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "storage"); return err; }
+    mqtt_mgr_reload();
+    return send_ok(req);
+}
+
+static esp_err_t handler_mqtt_in_delete(httpd_req_t *req)
+{
+    int index = -1;
+    sscanf(req->uri + strlen("/api/mqtt/in/"), "%d", &index);
+    if (index < 0 || index >= MQTT_SLOTS_MAX) {
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "invalid index");
+        return ESP_FAIL;
+    }
+    storage_delete_mqtt_in_slot(index);
+    mqtt_mgr_reload();
+    return send_ok(req);
+}
+
 // ── Server start/stop ─────────────────────────────────────────────────────────
 
 esp_err_t web_ui_init(void)
@@ -929,7 +1190,7 @@ esp_err_t web_ui_start(void)
 
     httpd_config_t cfg = HTTPD_DEFAULT_CONFIG();
     cfg.uri_match_fn     = httpd_uri_match_wildcard;
-    cfg.max_uri_handlers = 28;
+    cfg.max_uri_handlers = 42;
     cfg.stack_size        = 8192;   // default 4096 overflows during OTA (buf[1024] + flash writes)
     cfg.recv_wait_timeout = 30;     // seconds; default 5 is too short for ~1.3 MB upload over WiFi
     cfg.send_wait_timeout = 30;
@@ -963,6 +1224,16 @@ esp_err_t web_ui_start(void)
         { .uri = "/api/board",             .method = HTTP_GET,  .handler = handler_board_get },
         { .uri = "/api/board",             .method = HTTP_POST, .handler = handler_board_set },
         { .uri = "/api/logout",            .method = HTTP_POST, .handler = handler_logout },
+        { .uri = "/api/webhook",           .method = HTTP_GET,    .handler = handler_webhook_get },
+        { .uri = "/api/webhook",           .method = HTTP_POST,   .handler = handler_webhook_post },
+        { .uri = "/api/webhook/slots/*",   .method = HTTP_PUT,    .handler = handler_webhook_slot_put },
+        { .uri = "/api/webhook/slots/*",   .method = HTTP_DELETE, .handler = handler_webhook_slot_delete },
+        { .uri = "/api/mqtt",              .method = HTTP_GET,    .handler = handler_mqtt_get },
+        { .uri = "/api/mqtt",              .method = HTTP_POST,   .handler = handler_mqtt_post },
+        { .uri = "/api/mqtt/out/*",        .method = HTTP_PUT,    .handler = handler_mqtt_out_put },
+        { .uri = "/api/mqtt/out/*",        .method = HTTP_DELETE, .handler = handler_mqtt_out_delete },
+        { .uri = "/api/mqtt/in/*",         .method = HTTP_PUT,    .handler = handler_mqtt_in_put },
+        { .uri = "/api/mqtt/in/*",         .method = HTTP_DELETE, .handler = handler_mqtt_in_delete },
     };
     for (size_t i = 0; i < sizeof(routes) / sizeof(routes[0]); i++) {
         httpd_register_uri_handler(s_server, &routes[i]);

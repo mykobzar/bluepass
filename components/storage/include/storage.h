@@ -82,3 +82,70 @@ typedef struct {
 
 esp_err_t storage_get_board_config(board_config_t *out);
 esp_err_t storage_set_board_config(const board_config_t *cfg);
+
+// ── Webhook ──────────────────────────────────────────────────────────────────
+
+#define WEBHOOK_SLOTS_MAX  8
+#define WEBHOOK_URL_MAX    200
+#define WEBHOOK_VALUE_MAX  64
+#define WEBHOOK_LABEL_MAX  32
+
+typedef struct {
+    bool    active;
+    uint8_t modifiers;
+    uint8_t keycode;
+    char    url[WEBHOOK_URL_MAX];
+    char    value[WEBHOOK_VALUE_MAX];
+    char    label[WEBHOOK_LABEL_MAX];
+} webhook_slot_t;
+
+esp_err_t storage_get_webhook_enabled(bool *out);
+esp_err_t storage_set_webhook_enabled(bool enabled);
+esp_err_t storage_get_webhook_slot(uint8_t idx, webhook_slot_t *out);
+esp_err_t storage_set_webhook_slot(uint8_t idx, const webhook_slot_t *slot);
+esp_err_t storage_delete_webhook_slot(uint8_t idx);
+
+// ── MQTT ─────────────────────────────────────────────────────────────────────
+
+#define MQTT_SLOTS_MAX      8
+#define MQTT_BROKER_URL_MAX 100
+#define MQTT_TOPIC_MAX      128
+#define MQTT_VALUE_MAX      128
+#define MQTT_USER_MAX       64
+#define MQTT_PASS_MAX       64
+#define MQTT_LABEL_MAX      32
+
+typedef struct {
+    bool    active;
+    uint8_t modifiers;
+    uint8_t keycode;
+    char    topic[MQTT_TOPIC_MAX];
+    char    value[MQTT_VALUE_MAX];
+    char    label[MQTT_LABEL_MAX];
+} mqtt_out_slot_t;
+
+typedef struct {
+    bool    active;
+    char    topic[MQTT_TOPIC_MAX];
+    char    match_value[MQTT_VALUE_MAX];
+    uint8_t modifiers;
+    uint8_t keycode;
+    char    label[MQTT_LABEL_MAX];
+} mqtt_in_slot_t;
+
+typedef struct {
+    bool out_enabled;
+    bool in_enabled;
+    char broker_url[MQTT_BROKER_URL_MAX];
+    char username[MQTT_USER_MAX];
+    char password[MQTT_PASS_MAX];
+} mqtt_broker_config_t;
+
+esp_err_t storage_get_mqtt_broker(mqtt_broker_config_t *out);
+esp_err_t storage_set_mqtt_broker(const mqtt_broker_config_t *cfg);
+esp_err_t storage_get_mqtt_out_slot(uint8_t idx, mqtt_out_slot_t *out);
+esp_err_t storage_set_mqtt_out_slot(uint8_t idx, const mqtt_out_slot_t *slot);
+esp_err_t storage_delete_mqtt_out_slot(uint8_t idx);
+esp_err_t storage_get_mqtt_in_slot(uint8_t idx, mqtt_in_slot_t *out);
+esp_err_t storage_set_mqtt_in_slot(uint8_t idx, const mqtt_in_slot_t *slot);
+esp_err_t storage_delete_mqtt_in_slot(uint8_t idx);
