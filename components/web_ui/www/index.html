@@ -2125,9 +2125,8 @@ let s_passkeyData = null;
 async function loadPasskeyNav() {
   try {
     const d = await fetch('/api/passkey').then(r => r.json());
-    const visible = d.enabled;
-    document.getElementById('nav-passkey-btn').style.display   = visible ? 'inline' : 'none';
-    document.getElementById('act-passkey-key').style.display   = visible ? 'inline' : 'none';
+    document.getElementById('nav-passkey-btn').style.display   = 'inline';
+    document.getElementById('act-passkey-key').style.display   = d.enabled ? 'inline' : 'none';
   } catch(_) {}
 }
 
@@ -2150,7 +2149,7 @@ async function loadPasskey() {
     loadPasskeyRK();
 
     // Show/hide nav button
-    document.getElementById('nav-passkey-btn').style.display   = d.enabled ? 'inline' : 'none';
+    document.getElementById('nav-passkey-btn').style.display   = 'inline';
     document.getElementById('act-passkey-key').style.display   = d.enabled ? 'inline' : 'none';
   } catch(e) { console.error('loadPasskey', e); }
 }
@@ -2191,7 +2190,7 @@ async function savePasskeyConfig() {
     });
     st.textContent = r.ok ? 'Saved.' : 'Error.';
     // Show/hide nav button based on new enabled state
-    document.getElementById('nav-passkey-btn').style.display   = enabled ? 'inline' : 'none';
+    document.getElementById('nav-passkey-btn').style.display   = 'inline';
     document.getElementById('act-passkey-key').style.display   = enabled ? 'inline' : 'none';
   } catch(e) { st.textContent = 'Error: ' + e; }
 }
