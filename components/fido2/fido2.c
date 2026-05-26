@@ -480,6 +480,7 @@ static void ctaphid_send_packet(uint32_t cid, uint8_t cmd,
 }
 
 static void ctaphid_error(uint32_t cid, uint8_t code) {
+    diag_append("CTAPHID_ERR cid=%08lX code=0x%02X\n", (unsigned long)cid, code);
     ctaphid_send_packet(cid, CTAPHID_ERROR, &code, 1);
 }
 
@@ -1300,6 +1301,9 @@ static void ctaphid_dispatch(uint32_t cid, uint8_t cmd,
     fido2_config_t cfg = {0};
     storage_get_fido2_config(&cfg);
 
+    diag_append("HID cmd=0x%02X cid=%08lX len=%u\n",
+                cmd, (unsigned long)cid, (unsigned)len);
+
     if (cmd == CTAPHID_INIT) {
         // Handle INIT regardless of enabled state
         if (len < 8) { ctaphid_error(cid, 0x03); return; }
@@ -1322,10 +1326,12 @@ static void ctaphid_dispatch(uint32_t cid, uint8_t cmd,
         resp[15] = 0;   // build
         resp[16] = 0x04 | 0x08; // CAPABILITY_CBOR | CAPABILITY_NMSG
         ctaphid_send_packet(new_cid, CTAPHID_INIT, resp, 17);
+        diag_append("  INIT ok new_cid=%08lX\n", (unsigned long)new_cid);
         return;
     }
 
     if (!cfg.enabled) {
+        diag_append("  disabled → operationDenied\n");
         ctaphid_error(cid, CTAP2_ERR_OPERATION_DENIED);
         return;
     }
@@ -1344,6 +1350,7 @@ static void ctaphid_dispatch(uint32_t cid, uint8_t cmd,
         const uint8_t *cbor = data + 1;
         size_t cbor_len = len - 1;
 
+        diag_append("  CBOR ctap=0x%02X cbor_len=%u\n", ctap_cmd, (unsigned)cbor_len);
         switch (ctap_cmd) {
         case CTAP2_CMD_GET_INFO:
             s_diag_cmd = "getInfo";
@@ -1452,7 +1459,12 @@ void fido2_register_tx(void (*tx_cb)(const uint8_t *buf))
 
 void fido2_on_hid_rx(const uint8_t *buf)
 {
-    if (!s_rx_queue) return;
+    if (!s_rx_queue) {
+        diag_append("RX: no queue\n");
+        return;
+    }
+    diag_append("RX %02X%02X%02X%02X cmd=%02X\n",
+                buf[0], buf[1], buf[2], buf[3], buf[4]);
     xQueueSend(s_rx_queue, buf, 0);
 }
 
