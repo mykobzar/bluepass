@@ -1043,14 +1043,25 @@ static void cmd_client_pin(uint32_t cid, const uint8_t *req, size_t req_len) {
             ctap2_respond(cid, CTAP2_ERR_NOT_ALLOWED, NULL, 0); goto done_pin;
         }
 
-        // Verify old PIN for changePIN
+        // newPinEnc (key 0x05): AES256-CBC(sharedSecret, IV=0, newPin) padded to 64 bytes
+        if (!cd_map_uint(req, req_len, 0x05, &v)) {
+            ctap2_respond(cid, CTAP2_ERR_MISSING_PARAMETER, NULL, 0); goto done_pin;
+        }
+        size_t npe_len; const uint8_t *npe = cd_bstr(&v, &npe_len);
+        if (!npe || npe_len < 64 || npe_len > 256) {
+            ctap2_respond(cid, CTAP2_ERR_INVALID_CBOR, NULL, 0); goto done_pin;
+        }
+
+        // For changePIN: verify old PIN via pinHashEnc (key 0x06)
+        const uint8_t *phe_for_hmac = NULL;
+        size_t phe_hmac_len = 0;
         if (subcmd == CTAP2_SUBCMD_CHANGE_PIN) {
             if (cfg.pin_retries == 0) { ctap2_respond(cid, CTAP2_ERR_PIN_BLOCKED, NULL, 0); goto done_pin; }
-            if (!cd_map_uint(req, req_len, 0x05, &v)) { // pinHashEnc
+            if (!cd_map_uint(req, req_len, 0x06, &v)) {
                 ctap2_respond(cid, CTAP2_ERR_MISSING_PARAMETER, NULL, 0); goto done_pin;
             }
-            size_t phe_len; const uint8_t *phe = cd_bstr(&v, &phe_len);
-            if (!phe || phe_len < 16) { ctap2_respond(cid, CTAP2_ERR_INVALID_CBOR, NULL, 0); goto done_pin; }
+            const uint8_t *phe = cd_bstr(&v, &phe_hmac_len);
+            if (!phe || phe_hmac_len < 16) { ctap2_respond(cid, CTAP2_ERR_INVALID_CBOR, NULL, 0); goto done_pin; }
             uint8_t dec_hash[16] = {0};
             aes_cbc_decrypt(shared_secret, phe, 16, dec_hash);
             uint8_t stored_hash[16] = {0};
@@ -1062,19 +1073,11 @@ static void cmd_client_pin(uint32_t cid, const uint8_t *req, size_t req_len) {
                 goto done_pin;
             }
             cfg.pin_retries = PIN_RETRIES_MAX;
+            phe_for_hmac = phe; // valid for HMAC — points into s_hid.buf which lives for this call
         }
 
-        // newPinEnc (key 0x04)
+        // pinAuth (key 0x04) = LEFT(HMAC-SHA-256(sharedSecret, newPinEnc [|| pinHashEnc]), 16)
         if (!cd_map_uint(req, req_len, 0x04, &v)) {
-            ctap2_respond(cid, CTAP2_ERR_MISSING_PARAMETER, NULL, 0); goto done_pin;
-        }
-        size_t npe_len; const uint8_t *npe = cd_bstr(&v, &npe_len);
-        if (!npe || npe_len < 64 || npe_len > 256) {
-            ctap2_respond(cid, CTAP2_ERR_INVALID_CBOR, NULL, 0); goto done_pin;
-        }
-
-        // Verify pinUvAuthParam (key 0x08) = HMAC-SHA256(sharedSecret, newPinEnc)[0:16]
-        if (!cd_map_uint(req, req_len, 0x08, &v)) {
             ctap2_respond(cid, CTAP2_ERR_MISSING_PARAMETER, NULL, 0); goto done_pin;
         }
         size_t pap_len; const uint8_t *pap = cd_bstr(&v, &pap_len);
@@ -1082,7 +1085,18 @@ static void cmd_client_pin(uint32_t cid, const uint8_t *req, size_t req_len) {
             ctap2_respond(cid, CTAP2_ERR_PIN_AUTH_INVALID, NULL, 0); goto done_pin;
         }
         uint8_t expected_hmac[32];
-        hmac_sha256(shared_secret, 32, npe, npe_len, expected_hmac);
+        if (phe_for_hmac) {
+            // changePIN: HMAC over newPinEnc || pinHashEnc
+            mbedtls_md_context_t md; mbedtls_md_init(&md);
+            mbedtls_md_setup(&md, mbedtls_md_info_from_type(MBEDTLS_MD_SHA256), 1);
+            mbedtls_md_hmac_starts(&md, shared_secret, 32);
+            mbedtls_md_hmac_update(&md, npe, npe_len);
+            mbedtls_md_hmac_update(&md, phe_for_hmac, phe_hmac_len);
+            mbedtls_md_hmac_finish(&md, expected_hmac);
+            mbedtls_md_free(&md);
+        } else {
+            hmac_sha256(shared_secret, 32, npe, npe_len, expected_hmac);
+        }
         if (memcmp(expected_hmac, pap, 16) != 0) {
             ctap2_respond(cid, CTAP2_ERR_PIN_AUTH_INVALID, NULL, 0); goto done_pin;
         }
@@ -1091,7 +1105,6 @@ static void cmd_client_pin(uint32_t cid, const uint8_t *req, size_t req_len) {
         uint8_t *pin_plain = malloc(npe_len);
         if (!pin_plain) { ctap2_respond(cid, CTAP2_ERR_OPERATION_DENIED, NULL, 0); goto done_pin; }
         aes_cbc_decrypt(shared_secret, npe, npe_len, pin_plain);
-        // PIN is null-terminated in the 64-byte block; find actual length
         size_t pin_len = strnlen((char *)pin_plain, npe_len);
         if (pin_len < 4) {
             free(pin_plain);
@@ -1103,10 +1116,10 @@ static void cmd_client_pin(uint32_t cid, const uint8_t *req, size_t req_len) {
         sha256(pin_plain, pin_len, h1);
         sha256(h1, 32, h2);
         free(pin_plain);
-        storage_set_fido2_pin_hash(h2); // stores first 16 bytes
+        storage_set_fido2_pin_hash(h2);
         cfg.pin_retries = PIN_RETRIES_MAX;
         storage_set_fido2_config(&cfg);
-        s_pin_token_valid = false; // invalidate old tokens
+        s_pin_token_valid = false;
         ctap2_respond(cid, CTAP2_OK, NULL, 0);
         goto done_pin;
     }
