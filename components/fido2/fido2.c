@@ -1325,8 +1325,12 @@ static void ctaphid_dispatch(uint32_t cid, uint8_t cmd,
         resp[14] = 0;   // minor version
         resp[15] = 0;   // build
         resp[16] = 0x04 | 0x08; // CAPABILITY_CBOR | CAPABILITY_NMSG
-        ctaphid_send_packet(new_cid, CTAPHID_INIT, resp, 17);
-        diag_append("  INIT ok new_cid=%08lX\n", (unsigned long)new_cid);
+        // Response goes on the same CID as the request (broadcast→broadcast per CTAP2.0 §8.1.5.4)
+        // new_cid is carried in the response payload (bytes 8-11), not in the packet header
+        uint32_t resp_cid = (cid == CTAPHID_CID_BROADCAST) ? CTAPHID_CID_BROADCAST : new_cid;
+        ctaphid_send_packet(resp_cid, CTAPHID_INIT, resp, 17);
+        diag_append("  INIT ok new_cid=%08lX resp_on=%08lX\n",
+                    (unsigned long)new_cid, (unsigned long)resp_cid);
         return;
     }
 
