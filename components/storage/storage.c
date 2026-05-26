@@ -375,3 +375,155 @@ esp_err_t storage_set_connection_mode(connection_mode_t mode)
     nvs_close(h);
     return err;
 }
+
+// ── FIDO2 ────────────────────────────────────────────────────────────────────
+
+#define NS_FIDO2       "fido2"
+#define KEY_F2_CFG     "cfg"
+#define KEY_F2_MKEY    "mkey"
+#define KEY_F2_PINH    "pinh"
+#define KEY_F2_SC      "sc"
+
+esp_err_t storage_get_fido2_config(fido2_config_t *out)
+{
+    memset(out, 0, sizeof(*out));
+    nvs_handle_t h;
+    if (nvs_open(NS_FIDO2, NVS_READONLY, &h) != ESP_OK) return ESP_ERR_NVS_NOT_FOUND;
+    size_t len = sizeof(*out);
+    esp_err_t err = nvs_get_blob(h, KEY_F2_CFG, out, &len);
+    nvs_close(h);
+    if (err != ESP_OK) out->pin_retries = 8;
+    return err;
+}
+
+esp_err_t storage_set_fido2_config(const fido2_config_t *cfg)
+{
+    nvs_handle_t h;
+    ESP_RETURN_ON_ERROR(nvs_open(NS_FIDO2, NVS_READWRITE, &h), TAG, "open");
+    esp_err_t err = nvs_set_blob(h, KEY_F2_CFG, cfg, sizeof(*cfg));
+    if (err == ESP_OK) err = nvs_commit(h);
+    nvs_close(h);
+    return err;
+}
+
+esp_err_t storage_get_fido2_master_key(uint8_t key[32])
+{
+    nvs_handle_t h;
+    if (nvs_open(NS_FIDO2, NVS_READONLY, &h) != ESP_OK) return ESP_ERR_NVS_NOT_FOUND;
+    size_t len = 32;
+    esp_err_t err = nvs_get_blob(h, KEY_F2_MKEY, key, &len);
+    nvs_close(h);
+    return err;
+}
+
+esp_err_t storage_set_fido2_master_key(const uint8_t key[32])
+{
+    nvs_handle_t h;
+    ESP_RETURN_ON_ERROR(nvs_open(NS_FIDO2, NVS_READWRITE, &h), TAG, "open");
+    esp_err_t err = nvs_set_blob(h, KEY_F2_MKEY, key, 32);
+    if (err == ESP_OK) err = nvs_commit(h);
+    nvs_close(h);
+    return err;
+}
+
+bool storage_fido2_has_pin(void)
+{
+    nvs_handle_t h;
+    if (nvs_open(NS_FIDO2, NVS_READONLY, &h) != ESP_OK) return false;
+    uint8_t tmp[16]; size_t len = 16;
+    bool has = (nvs_get_blob(h, KEY_F2_PINH, tmp, &len) == ESP_OK);
+    nvs_close(h);
+    return has;
+}
+
+esp_err_t storage_get_fido2_pin_hash(uint8_t hash[16])
+{
+    nvs_handle_t h;
+    if (nvs_open(NS_FIDO2, NVS_READONLY, &h) != ESP_OK) return ESP_ERR_NVS_NOT_FOUND;
+    size_t len = 16;
+    esp_err_t err = nvs_get_blob(h, KEY_F2_PINH, hash, &len);
+    nvs_close(h);
+    return err;
+}
+
+esp_err_t storage_set_fido2_pin_hash(const uint8_t hash[32])
+{
+    nvs_handle_t h;
+    ESP_RETURN_ON_ERROR(nvs_open(NS_FIDO2, NVS_READWRITE, &h), TAG, "open");
+    esp_err_t err = nvs_set_blob(h, KEY_F2_PINH, hash, 16); // store first 16 bytes
+    if (err == ESP_OK) err = nvs_commit(h);
+    nvs_close(h);
+    return err;
+}
+
+esp_err_t storage_clear_fido2_pin_hash(void)
+{
+    nvs_handle_t h;
+    ESP_RETURN_ON_ERROR(nvs_open(NS_FIDO2, NVS_READWRITE, &h), TAG, "open");
+    esp_err_t err = nvs_erase_key(h, KEY_F2_PINH);
+    if (err == ESP_ERR_NVS_NOT_FOUND) err = ESP_OK;
+    if (err == ESP_OK) err = nvs_commit(h);
+    nvs_close(h);
+    return err;
+}
+
+uint32_t storage_fido2_inc_sign_counter(void)
+{
+    nvs_handle_t h;
+    uint32_t v = 0;
+    if (nvs_open(NS_FIDO2, NVS_READWRITE, &h) != ESP_OK) return 1;
+    nvs_get_u32(h, KEY_F2_SC, &v);
+    v++;
+    nvs_set_u32(h, KEY_F2_SC, v);
+    nvs_commit(h);
+    nvs_close(h);
+    return v;
+}
+
+esp_err_t storage_fido2_reset_sign_counter(void)
+{
+    nvs_handle_t h;
+    ESP_RETURN_ON_ERROR(nvs_open(NS_FIDO2, NVS_READWRITE, &h), TAG, "open");
+    esp_err_t err = nvs_set_u32(h, KEY_F2_SC, 0);
+    if (err == ESP_OK) err = nvs_commit(h);
+    nvs_close(h);
+    return err;
+}
+
+esp_err_t storage_get_fido2_rk(uint8_t idx, fido2_rk_t *out)
+{
+    if (idx >= FIDO2_RK_MAX) return ESP_ERR_INVALID_ARG;
+    memset(out, 0, sizeof(*out));
+    nvs_handle_t h;
+    if (nvs_open(NS_FIDO2, NVS_READONLY, &h) != ESP_OK) return ESP_ERR_NVS_NOT_FOUND;
+    char key[6]; snprintf(key, sizeof(key), "rk%u", idx);
+    size_t len = sizeof(*out);
+    esp_err_t err = nvs_get_blob(h, key, out, &len);
+    nvs_close(h);
+    return err;
+}
+
+esp_err_t storage_set_fido2_rk(uint8_t idx, const fido2_rk_t *rk)
+{
+    if (idx >= FIDO2_RK_MAX) return ESP_ERR_INVALID_ARG;
+    nvs_handle_t h;
+    ESP_RETURN_ON_ERROR(nvs_open(NS_FIDO2, NVS_READWRITE, &h), TAG, "open");
+    char key[6]; snprintf(key, sizeof(key), "rk%u", idx);
+    esp_err_t err = nvs_set_blob(h, key, rk, sizeof(*rk));
+    if (err == ESP_OK) err = nvs_commit(h);
+    nvs_close(h);
+    return err;
+}
+
+esp_err_t storage_delete_fido2_rk(uint8_t idx)
+{
+    if (idx >= FIDO2_RK_MAX) return ESP_ERR_INVALID_ARG;
+    nvs_handle_t h;
+    ESP_RETURN_ON_ERROR(nvs_open(NS_FIDO2, NVS_READWRITE, &h), TAG, "open");
+    char key[6]; snprintf(key, sizeof(key), "rk%u", idx);
+    esp_err_t err = nvs_erase_key(h, key);
+    if (err == ESP_ERR_NVS_NOT_FOUND) err = ESP_OK;
+    if (err == ESP_OK) err = nvs_commit(h);
+    nvs_close(h);
+    return err;
+}

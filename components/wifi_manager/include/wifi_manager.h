@@ -39,3 +39,5 @@ void wifi_manager_led_on(void);
 void wifi_manager_led_off(void);
 void wifi_manager_set_jiggler_active(bool active);
 void wifi_manager_led_blink_once(void);
+// Amber blink while FIDO2 is waiting for user-presence confirmation
+void wifi_manager_set_fido2_pending(bool pending);

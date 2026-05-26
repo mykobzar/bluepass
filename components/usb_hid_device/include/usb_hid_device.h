@@ -24,3 +24,10 @@ esp_err_t usb_hid_device_type_string(const char *str);
 esp_err_t usb_hid_device_type_unicode(uint32_t codepoint);
 
 bool usb_hid_device_is_mounted(void);
+
+// FIDO2 HID interface (instance 1, usage page 0xF1D0, 64-byte reports)
+esp_err_t usb_hid_fido2_send(const uint8_t *buf64);  // send 64-byte CTAPHID packet to host
+
+// Register callback for 64-byte packets received from host on the FIDO2 interface
+typedef void (*fido2_rx_cb_t)(const uint8_t *buf);
+void usb_hid_fido2_set_rx_cb(fido2_rx_cb_t cb);

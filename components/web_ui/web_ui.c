@@ -1,6 +1,7 @@
 #include "web_ui.h"
 #include "esp_flash_encrypt.h"
 #include "storage.h"
+#include "fido2.h"
 #include "jiggler.h"
 #include "hotkey.h"
 #include "wifi_manager.h"
@@ -24,6 +25,7 @@
 #include "esp_timer.h"
 #include "nvs_flash.h"
 #include "cJSON.h"
+#include "mbedtls/sha256.h"
 #include <string.h>
 #include <stdio.h>
 #include <time.h>
@@ -1225,6 +1227,142 @@ static esp_err_t handler_mqtt_in_delete(httpd_req_t *req)
     return send_ok(req);
 }
 
+// ── Passkey (FIDO2/CTAP2) API ─────────────────────────────────────────────────
+// GET    /api/passkey        → config + rk_count + pending_up
+// POST   /api/passkey        → {enabled, uv_mode, confirm_modifiers, confirm_keycode}
+// POST   /api/passkey/pin    → {pin:"..."} set/change PIN (plain text, local WiFi only)
+// POST   /api/passkey/key    → regenerate master key
+// DELETE /api/passkey        → factory reset
+// GET    /api/passkey/rk     → list resident keys (meta only, no private keys)
+// DELETE /api/passkey/rk/{n} → delete resident key slot n
+
+static esp_err_t handler_passkey_get(httpd_req_t *req)
+{
+    fido2_config_t cfg = {0};
+    storage_get_fido2_config(&cfg);
+    cJSON *obj = cJSON_CreateObject();
+    cJSON_AddBoolToObject  (obj, "enabled",           cfg.enabled);
+    cJSON_AddNumberToObject(obj, "uv_mode",           cfg.uv_mode);
+    cJSON_AddNumberToObject(obj, "confirm_modifiers", cfg.confirm_modifiers);
+    cJSON_AddNumberToObject(obj, "confirm_keycode",   cfg.confirm_keycode);
+    cJSON_AddNumberToObject(obj, "rk_count",          cfg.rk_count);
+    cJSON_AddBoolToObject  (obj, "pin_set",           storage_fido2_has_pin());
+    cJSON_AddBoolToObject  (obj, "pending_up",        fido2_pending_up());
+    send_json(req, obj);
+    cJSON_Delete(obj);
+    return ESP_OK;
+}
+
+static esp_err_t handler_passkey_post(httpd_req_t *req)
+{
+    char body[256];
+    int n = httpd_req_recv(req, body, sizeof(body) - 1);
+    if (n <= 0) { httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "empty"); return ESP_FAIL; }
+    body[n] = '\0';
+    cJSON *json = cJSON_Parse(body);
+    if (!json) { httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "JSON"); return ESP_FAIL; }
+
+    fido2_config_t cfg = {0};
+    storage_get_fido2_config(&cfg);
+    cJSON *v;
+    if ((v = cJSON_GetObjectItem(json, "enabled"))           && cJSON_IsBool(v))   cfg.enabled           = cJSON_IsTrue(v) ? 1 : 0;
+    if ((v = cJSON_GetObjectItem(json, "uv_mode"))           && cJSON_IsNumber(v)) cfg.uv_mode           = (uint8_t)v->valueint;
+    if ((v = cJSON_GetObjectItem(json, "confirm_modifiers")) && cJSON_IsNumber(v)) cfg.confirm_modifiers = (uint8_t)v->valueint;
+    if ((v = cJSON_GetObjectItem(json, "confirm_keycode"))   && cJSON_IsNumber(v)) cfg.confirm_keycode   = (uint8_t)v->valueint;
+    cJSON_Delete(json);
+
+    esp_err_t err = storage_set_fido2_config(&cfg);
+    if (err != ESP_OK) { httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "storage"); return err; }
+    return send_ok(req);
+}
+
+static esp_err_t handler_passkey_pin(httpd_req_t *req)
+{
+    char body[128];
+    int n = httpd_req_recv(req, body, sizeof(body) - 1);
+    if (n <= 0) { httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "empty"); return ESP_FAIL; }
+    body[n] = '\0';
+    cJSON *json = cJSON_Parse(body);
+    if (!json) { httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "JSON"); return ESP_FAIL; }
+
+    cJSON *pin_j = cJSON_GetObjectItem(json, "pin");
+    if (!pin_j || !cJSON_IsString(pin_j) || strlen(pin_j->valuestring) < 4) {
+        cJSON_Delete(json);
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "PIN must be at least 4 characters");
+        return ESP_FAIL;
+    }
+
+    // Store SHA256(SHA256(pin))[0:16] — same derivation as CTAP2 clientPIN
+    const char *pin = pin_j->valuestring;
+    size_t pin_len = strlen(pin);
+    cJSON_Delete(json);
+
+    uint8_t h1[32], h2[32];
+    mbedtls_sha256((const uint8_t *)pin, pin_len, h1, 0);
+    mbedtls_sha256(h1, 32, h2, 0);
+    memset(h1, 0, sizeof(h1));
+
+    esp_err_t err = storage_set_fido2_pin_hash(h2);
+    memset(h2, 0, sizeof(h2));
+    if (err != ESP_OK) { httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "storage"); return err; }
+
+    // Reset retries on PIN change
+    fido2_config_t cfg = {0};
+    storage_get_fido2_config(&cfg);
+    cfg.pin_retries = 8;
+    storage_set_fido2_config(&cfg);
+
+    return send_ok(req);
+}
+
+static esp_err_t handler_passkey_regen_key(httpd_req_t *req)
+{
+    esp_err_t err = fido2_regen_master_key();
+    if (err != ESP_OK) { httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "regen failed"); return err; }
+    return send_ok(req);
+}
+
+static esp_err_t handler_passkey_delete(httpd_req_t *req)
+{
+    esp_err_t err = fido2_factory_reset();
+    if (err != ESP_OK) { httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "reset failed"); return err; }
+    return send_ok(req);
+}
+
+static esp_err_t handler_passkey_rk_get(httpd_req_t *req)
+{
+    cJSON *arr = cJSON_CreateArray();
+    for (int i = 0; i < FIDO2_RK_MAX; i++) {
+        fido2_rk_t rk = {0};
+        if (storage_get_fido2_rk(i, &rk) != ESP_OK || !rk.active) continue;
+        cJSON *obj = cJSON_CreateObject();
+        cJSON_AddNumberToObject(obj, "index",        i);
+        cJSON_AddNumberToObject(obj, "sign_count",   rk.sign_count);
+        cJSON_AddStringToObject(obj, "user_name",    rk.user_name);
+        cJSON_AddStringToObject(obj, "display_name", rk.display_name);
+        // Encode rp_id_hash as hex
+        char hex[65] = {0};
+        for (int j = 0; j < 32; j++) snprintf(hex + j*2, 3, "%02x", rk.rp_id_hash[j]);
+        cJSON_AddStringToObject(obj, "rp_id_hash", hex);
+        cJSON_AddItemToArray(arr, obj);
+    }
+    send_json(req, arr);
+    cJSON_Delete(arr);
+    return ESP_OK;
+}
+
+static esp_err_t handler_passkey_rk_delete(httpd_req_t *req)
+{
+    int index = -1;
+    sscanf(req->uri + strlen("/api/passkey/rk/"), "%d", &index);
+    if (index < 0 || index >= FIDO2_RK_MAX) {
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "invalid index");
+        return ESP_FAIL;
+    }
+    storage_delete_fido2_rk(index);
+    return send_ok(req);
+}
+
 // ── Server start/stop ─────────────────────────────────────────────────────────
 
 esp_err_t web_ui_init(void)
@@ -1245,7 +1383,7 @@ esp_err_t web_ui_start(void)
 
     httpd_config_t cfg = HTTPD_DEFAULT_CONFIG();
     cfg.uri_match_fn     = httpd_uri_match_wildcard;
-    cfg.max_uri_handlers = 48;
+    cfg.max_uri_handlers = 56;
     cfg.stack_size        = 8192;   // default 4096 overflows during OTA (buf[1024] + flash writes)
     cfg.recv_wait_timeout = 30;     // seconds; default 5 is too short for ~1.3 MB upload over WiFi
     cfg.send_wait_timeout = 30;
@@ -1294,6 +1432,13 @@ esp_err_t web_ui_start(void)
         { .uri = "/api/mqtt/out/*",        .method = HTTP_DELETE, .handler = handler_mqtt_out_delete },
         { .uri = "/api/mqtt/in/*",         .method = HTTP_PUT,    .handler = handler_mqtt_in_put },
         { .uri = "/api/mqtt/in/*",         .method = HTTP_DELETE, .handler = handler_mqtt_in_delete },
+        { .uri = "/api/passkey",           .method = HTTP_GET,    .handler = handler_passkey_get },
+        { .uri = "/api/passkey",           .method = HTTP_POST,   .handler = handler_passkey_post },
+        { .uri = "/api/passkey",           .method = HTTP_DELETE, .handler = handler_passkey_delete },
+        { .uri = "/api/passkey/pin",       .method = HTTP_POST,   .handler = handler_passkey_pin },
+        { .uri = "/api/passkey/key",       .method = HTTP_POST,   .handler = handler_passkey_regen_key },
+        { .uri = "/api/passkey/rk",        .method = HTTP_GET,    .handler = handler_passkey_rk_get },
+        { .uri = "/api/passkey/rk/*",      .method = HTTP_DELETE, .handler = handler_passkey_rk_delete },
     };
     for (size_t i = 0; i < sizeof(routes) / sizeof(routes[0]); i++) {
         httpd_register_uri_handler(s_server, &routes[i]);
