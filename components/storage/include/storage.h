@@ -160,3 +160,50 @@ esp_err_t storage_delete_mqtt_out_slot(uint8_t idx);
 esp_err_t storage_get_mqtt_in_slot(uint8_t idx, mqtt_in_slot_t *out);
 esp_err_t storage_set_mqtt_in_slot(uint8_t idx, const mqtt_in_slot_t *slot);
 esp_err_t storage_delete_mqtt_in_slot(uint8_t idx);
+
+// ── FIDO2 ────────────────────────────────────────────────────────────────────
+
+#define FIDO2_RK_MAX        8
+#define FIDO2_USER_ID_MAX   64
+#define FIDO2_USER_NAME_MAX 32
+#define FIDO2_CRED_ID_LEN   108
+
+typedef struct {
+    bool    enabled;
+    uint8_t uv_mode;            // 0 = UP-only, 1 = UP+UV (PIN required for UV)
+    uint8_t pin_retries;        // remaining retries (max 8), 0 = blocked
+    uint8_t confirm_modifiers;  // hotkey to confirm user presence
+    uint8_t confirm_keycode;
+    uint8_t rk_count;           // occupied resident key slots
+    uint8_t _pad[2];
+} fido2_config_t;
+
+typedef struct {
+    bool     active;
+    uint8_t  rp_id_hash[32];
+    uint8_t  cred_id[FIDO2_CRED_ID_LEN];
+    uint8_t  user_id[FIDO2_USER_ID_MAX];
+    uint8_t  user_id_len;
+    char     user_name[FIDO2_USER_NAME_MAX];
+    char     display_name[FIDO2_USER_NAME_MAX];
+    uint32_t sign_count;
+} fido2_rk_t;
+
+esp_err_t storage_get_fido2_config(fido2_config_t *out);
+esp_err_t storage_set_fido2_config(const fido2_config_t *cfg);
+
+esp_err_t storage_get_fido2_master_key(uint8_t key[32]);
+esp_err_t storage_set_fido2_master_key(const uint8_t key[32]);
+
+// PIN hash = SHA-256(SHA-256(pin))[0:16]; returns false if no PIN set
+bool      storage_fido2_has_pin(void);
+esp_err_t storage_get_fido2_pin_hash(uint8_t hash[16]);
+esp_err_t storage_set_fido2_pin_hash(const uint8_t hash[32]); // stores first 16 bytes
+esp_err_t storage_clear_fido2_pin_hash(void);
+
+uint32_t  storage_fido2_inc_sign_counter(void);
+esp_err_t storage_fido2_reset_sign_counter(void);
+
+esp_err_t storage_get_fido2_rk(uint8_t idx, fido2_rk_t *out);
+esp_err_t storage_set_fido2_rk(uint8_t idx, const fido2_rk_t *rk);
+esp_err_t storage_delete_fido2_rk(uint8_t idx);

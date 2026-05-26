@@ -148,6 +148,7 @@
   <button onclick="show('log')">Info</button>
   <button onclick="show('connection')">Connection</button>
   <button onclick="show('text')">Hotkeys</button>
+  <button id="nav-passkey-btn" onclick="show('passkey')" style="display:none">Passkey</button>
   <button onclick="show('wifi')">Settings</button>
 </nav>
 <nav id="activities-nav">
@@ -158,6 +159,7 @@
   <button onclick="show('webhook')">Webhook</button>
   <button id="act-mqtt-out" onclick="show('mqtt-out')" style="display:none">MQTT Out</button>
   <button id="act-mqtt-in" onclick="show('mqtt-in')" style="display:none">MQTT In</button>
+  <button id="act-passkey-key" onclick="show('passkey-key')" style="display:none">Passkey</button>
 </nav>
 <nav id="settings-nav">
   <button onclick="show('wifi')">WiFi</button>
@@ -659,6 +661,18 @@
   <button id="mqtt-out-cancel-btn" onclick="cancelMqttOutEdit()" style="display:none;margin-left:0.4rem">Cancel</button>
 </div>
 
+<!-- Passkey (FIDO2 confirm-key, shown only when FIDO2 enabled) -->
+<div id="tab-passkey-key" class="tab">
+  <h3>Passkey &#8594; Confirm Key</h3>
+  <p class="tab-desc">When a website asks you to tap your security key, the device waits for you to press a key on the keyboard or the physical button. Configure which key triggers confirmation here.</p>
+  <label>Confirm hotkey
+    <input id="pk-confirm-hotkey" type="text" placeholder="e.g. &lt;Ctrl&gt;+&lt;Shift&gt;+&lt;Y&gt; or leave empty for button-only">
+    <span class="hotkey-hint">Modifiers: &lt;Ctrl&gt; &lt;Shift&gt; &lt;Alt&gt; &lt;Win&gt; — use hex: &lt;0x15&gt;. Leave empty to confirm via physical button only.</span>
+  </label>
+  <button onclick="savePasskeyConfirmKey()">Save</button>
+  <div id="pk-key-status" class="status"></div>
+</div>
+
 <!-- MQTT In (Hotkeys) -->
 <div id="tab-mqtt-in" class="tab">
   <h3>MQTT In</h3>
@@ -676,6 +690,61 @@
   </label>
   <button id="mqtt-in-add-btn" onclick="saveMqttInSlot()">Add</button>
   <button id="mqtt-in-cancel-btn" onclick="cancelMqttInEdit()" style="display:none;margin-left:0.4rem">Cancel</button>
+</div>
+
+<!-- Passkey (Settings tab) -->
+<div id="tab-passkey" class="tab">
+  <h3>Passkey</h3>
+  <p class="tab-desc">Bluepass can act as a FIDO2 / WebAuthn security key over USB. When enabled, websites that support passkeys can register this device as an authenticator. User presence is confirmed via the physical button or a configured hotkey.</p>
+
+  <fieldset style="margin-bottom:1.2rem;padding:0.8rem 1rem;border:1px solid var(--border);border-radius:4px">
+    <legend style="padding:0 0.4rem;font-size:0.88rem;color:var(--dim)">General</legend>
+    <label style="display:inline-flex;align-items:center;gap:0.5rem;margin-bottom:0.7rem">
+      <input id="pk-enabled" type="checkbox"> Enable FIDO2 / Passkey
+    </label>
+    <label>UV mode
+      <select id="pk-uv-mode" style="width:100%;margin-top:0.2rem">
+        <option value="0">UP only — button press, no PIN required</option>
+        <option value="1">UP + UV — button press + PIN required</option>
+      </select>
+    </label>
+  </fieldset>
+
+  <fieldset style="margin-bottom:1.2rem;padding:0.8rem 1rem;border:1px solid var(--border);border-radius:4px">
+    <legend style="padding:0 0.4rem;font-size:0.88rem;color:var(--dim)">PIN</legend>
+    <p id="pk-pin-status-line" style="font-size:0.9rem;margin:0 0 0.7rem;color:var(--dim)">Checking…</p>
+    <label>New PIN (min 4 characters)
+      <input id="pk-pin" type="password" autocomplete="new-password" placeholder="Enter new PIN">
+    </label>
+    <button onclick="savePasskeyPin()">Set PIN</button>
+    <div id="pk-pin-msg" class="status"></div>
+  </fieldset>
+
+  <fieldset style="margin-bottom:1.2rem;padding:0.8rem 1rem;border:1px solid var(--border);border-radius:4px">
+    <legend style="padding:0 0.4rem;font-size:0.88rem;color:var(--dim)">Master key</legend>
+    <p style="font-size:0.85rem;color:var(--dim);margin:0 0 0.7rem">The master key encrypts all non-resident credentials. Regenerating it invalidates every existing passkey — you will need to re-register with each website.</p>
+    <button onclick="regenPasskeyMasterKey()" style="border-color:#c55;color:#c55">Regenerate Master Key</button>
+    <div id="pk-key-regen-msg" class="status"></div>
+  </fieldset>
+
+  <fieldset style="margin-bottom:1.2rem;padding:0.8rem 1rem;border:1px solid var(--border);border-radius:4px">
+    <legend style="padding:0 0.4rem;font-size:0.88rem;color:var(--dim)">Resident keys (discoverable credentials)</legend>
+    <div id="pk-rk-list"><p style="color:var(--dim);font-size:0.9rem">Loading…</p></div>
+  </fieldset>
+
+  <div style="display:flex;align-items:center;gap:0.8rem;flex-wrap:wrap;margin-bottom:1.2rem">
+    <button onclick="savePasskeyConfig()">Save</button>
+    <span id="pk-save-msg" class="status" style="margin:0"></span>
+  </div>
+
+  <details style="margin-top:0.5rem">
+    <summary style="color:#c55;cursor:pointer">&#9888; Factory Reset (clears all passkeys, PIN, and master key)</summary>
+    <div style="margin-top:0.6rem;padding:0.7rem;background:var(--bg2);border:1px solid #c55;border-radius:4px">
+      <p style="font-size:0.85rem;color:#faa;margin:0 0 0.6rem">This erases all stored credentials, the PIN, and regenerates the master key. This cannot be undone.</p>
+      <button onclick="passkeyfactoryReset()" style="border-color:#c55;color:#c55">Factory Reset</button>
+      <div id="pk-reset-msg" class="status"></div>
+    </div>
+  </details>
 </div>
 
 <script>
@@ -893,7 +962,7 @@ function show(name) {
   document.getElementById('tab-' + name).classList.add('active');
   const mainNavVisible  = document.getElementById('main-nav').style.display !== 'none';
   const settingsTabs    = ['wifi','board','mqtt','ota','security'];
-  const activitiesTabs  = ['text','passwords','totp','jiggler','list','webhook','mqtt-out','mqtt-in'];
+  const activitiesTabs  = ['text','passwords','totp','jiggler','list','webhook','mqtt-out','mqtt-in','passkey-key'];
   document.getElementById('settings-nav').style.display =
     (mainNavVisible && settingsTabs.includes(name)) ? 'block' : 'none';
   document.getElementById('activities-nav').style.display =
@@ -905,6 +974,7 @@ function show(name) {
   if (name === 'board')    { loadBoard(); }
   if (name === 'webhook')  { loadWebhook(); }
   if (name === 'mqtt' || name === 'mqtt-out' || name === 'mqtt-in') { loadMqtt(); }
+  if (name === 'passkey')  { loadPasskey(); }
   if (name === 'totp') {
     updateTotpClock();
     if (!s_totpTimer) s_totpTimer = setInterval(updateTotpClock, 1000);
@@ -951,6 +1021,7 @@ async function initPage() {
       loadSlots();
       loadWebhook();
       loadMqtt();
+      loadPasskeyNav();
     }
   } catch (_) {
     document.getElementById('main-nav').style.display = 'block';
@@ -2046,6 +2117,136 @@ async function deleteMqttInSlot(index) {
   await fetch('/api/mqtt/in/' + index, { method: 'DELETE' });
   if (s_mqttInEditIndex === index) cancelMqttInEdit();
   loadMqtt();
+}
+
+// ── Passkey ───────────────────────────────────────────────────────────────────
+let s_passkeyData = null;
+
+async function loadPasskeyNav() {
+  try {
+    const d = await fetch('/api/passkey').then(r => r.json());
+    const visible = d.enabled;
+    document.getElementById('nav-passkey-btn').style.display   = visible ? 'inline' : 'none';
+    document.getElementById('act-passkey-key').style.display   = visible ? 'inline' : 'none';
+  } catch(_) {}
+}
+
+async function loadPasskey() {
+  try {
+    const d = await fetch('/api/passkey').then(r => r.json());
+    s_passkeyData = d;
+    document.getElementById('pk-enabled').checked = !!d.enabled;
+    document.getElementById('pk-uv-mode').value   = d.uv_mode || 0;
+
+    const pinLine = document.getElementById('pk-pin-status-line');
+    pinLine.textContent = d.pin_set ? 'PIN is set. Enter a new PIN to change it.' : 'No PIN set.';
+    pinLine.style.color = d.pin_set ? '#4caf50' : '#ff9800';
+
+    // Load confirm key into passkey-key tab
+    const combo = formatComboRaw(d.confirm_modifiers, d.confirm_keycode);
+    document.getElementById('pk-confirm-hotkey').value = combo;
+
+    // Load resident keys
+    loadPasskeyRK();
+
+    // Show/hide nav button
+    document.getElementById('nav-passkey-btn').style.display   = d.enabled ? 'inline' : 'none';
+    document.getElementById('act-passkey-key').style.display   = d.enabled ? 'inline' : 'none';
+  } catch(e) { console.error('loadPasskey', e); }
+}
+
+async function loadPasskeyRK() {
+  const el = document.getElementById('pk-rk-list');
+  try {
+    const rks = await fetch('/api/passkey/rk').then(r => r.json());
+    if (!rks.length) { el.innerHTML = '<p style="color:var(--dim);font-size:0.9rem">No resident keys stored.</p>'; return; }
+    el.innerHTML =
+      '<table><tr><th>RP ID (hash prefix)</th><th>User</th><th>Sign count</th><th></th></tr>'
+      + rks.map(k =>
+          '<tr>'
+          + '<td style="font-family:monospace;font-size:0.8rem">' + htmlEsc(k.rp_id_hash.slice(0,16)) + '…</td>'
+          + '<td>' + htmlEsc(k.display_name || k.user_name || '—') + '</td>'
+          + '<td>' + k.sign_count + '</td>'
+          + '<td><button onclick="deletePasskeyRK(' + k.index + ')">Delete</button></td>'
+          + '</tr>'
+        ).join('')
+      + '</table>';
+  } catch(_) { el.innerHTML = '<p style="color:var(--dim)">Error loading.</p>'; }
+}
+
+async function deletePasskeyRK(index) {
+  if (!confirm('Delete this resident key? The associated website will no longer be able to authenticate with it.')) return;
+  await fetch('/api/passkey/rk/' + index, { method: 'DELETE' });
+  loadPasskeyRK();
+}
+
+async function savePasskeyConfig() {
+  const st = document.getElementById('pk-save-msg');
+  st.textContent = 'Saving…';
+  const enabled = document.getElementById('pk-enabled').checked;
+  try {
+    const r = await fetch('/api/passkey', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ enabled, uv_mode: parseInt(document.getElementById('pk-uv-mode').value) })
+    });
+    st.textContent = r.ok ? 'Saved.' : 'Error.';
+    // Show/hide nav button based on new enabled state
+    document.getElementById('nav-passkey-btn').style.display   = enabled ? 'inline' : 'none';
+    document.getElementById('act-passkey-key').style.display   = enabled ? 'inline' : 'none';
+  } catch(e) { st.textContent = 'Error: ' + e; }
+}
+
+async function savePasskeyPin() {
+  const st = document.getElementById('pk-pin-msg');
+  const pin = document.getElementById('pk-pin').value;
+  if (pin.length < 4) { st.textContent = 'PIN must be at least 4 characters.'; return; }
+  st.textContent = 'Saving…';
+  try {
+    const r = await fetch('/api/passkey/pin', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ pin })
+    });
+    st.textContent = r.ok ? 'PIN saved.' : 'Error saving PIN.';
+    if (r.ok) {
+      document.getElementById('pk-pin').value = '';
+      document.getElementById('pk-pin-status-line').textContent = 'PIN is set. Enter a new PIN to change it.';
+      document.getElementById('pk-pin-status-line').style.color = '#4caf50';
+    }
+  } catch(e) { st.textContent = 'Error: ' + e; }
+}
+
+async function regenPasskeyMasterKey() {
+  if (!confirm('Regenerate the master key? All existing passkeys will stop working and you must re-register with every website.')) return;
+  const st = document.getElementById('pk-key-regen-msg');
+  st.textContent = 'Regenerating…';
+  try {
+    const r = await fetch('/api/passkey/key', { method: 'POST' });
+    st.textContent = r.ok ? 'New master key generated. Re-register passkeys with your websites.' : 'Error.';
+  } catch(e) { st.textContent = 'Error: ' + e; }
+}
+
+async function passkeyfactoryReset() {
+  if (!confirm('Factory reset FIDO2? All passkeys, PIN, and the master key will be erased. This cannot be undone.')) return;
+  const st = document.getElementById('pk-reset-msg');
+  st.textContent = 'Resetting…';
+  try {
+    const r = await fetch('/api/passkey', { method: 'DELETE' });
+    st.textContent = r.ok ? 'Reset complete.' : 'Error.';
+    if (r.ok) loadPasskey();
+  } catch(e) { st.textContent = 'Error: ' + e; }
+}
+
+async function savePasskeyConfirmKey() {
+  const st = document.getElementById('pk-key-status');
+  const parsed = parseHotkeyString(document.getElementById('pk-confirm-hotkey').value);
+  st.textContent = 'Saving…';
+  try {
+    const r = await fetch('/api/passkey', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ confirm_modifiers: parsed.mod, confirm_keycode: parsed.kc })
+    });
+    st.textContent = r.ok ? 'Saved.' : 'Error.';
+  } catch(e) { st.textContent = 'Error: ' + e; }
 }
 
 loadVersion();

@@ -27,6 +27,8 @@
 #define LED_JIG_ON_US  (200 * 1000)   // 200 ms flash                (jiggler on-phase)
 #define LED_JIG_OFF_US (2800 * 1000)  // 2.8 s dark                  (jiggler off-phase, 3 s cycle)
 #define LED_PULSE_US   (150 * 1000)   // 150 ms one-shot pulse        (substitution)
+#define LED_FIDO_ON_US (200 * 1000)   // 200 ms on                   (FIDO2 UP pending - amber)
+#define LED_FIDO_OFF_US (300 * 1000)  // 300 ms off                  (FIDO2 UP pending - 2 Hz)
 
 // Full-scale RGB colours scaled by brightness at runtime
 #define RED_R_F    255
@@ -88,6 +90,13 @@ static bool    s_led_on;
 static uint8_t s_blink_r, s_blink_g, s_blink_b;
 static bool    s_web_ui_active  = false;
 static bool    s_jiggler_active = false;
+static bool    s_fido2_pending  = false;
+#define AMBER_R_F  255
+#define AMBER_G_F  80
+#define AMBER_B_F  0
+#define AMBER_R  scale(AMBER_R_F)
+#define AMBER_G  scale(AMBER_G_F)
+#define AMBER_B  scale(AMBER_B_F)
 
 static volatile bool s_time_synced = false;
 static bool s_sntp_started = false;
@@ -130,6 +139,14 @@ static void led_apply(void)
         return;
     }
 
+    if (s_fido2_pending) {
+        s_blink_r = AMBER_R; s_blink_g = AMBER_G; s_blink_b = AMBER_B;
+        s_led_on = true;
+        led_set(AMBER_R, AMBER_G, AMBER_B);
+        esp_timer_start_once(s_led_timer, LED_FIDO_ON_US);
+        return;
+    }
+
     if (s_state != WIFI_MGR_STATE_CONNECTED) {
         s_blink_r = RED_R; s_blink_g = RED_G; s_blink_b = RED_B;
         s_led_on = false;
@@ -164,7 +181,9 @@ static void led_blink_cb(void *arg)
             s_led_on ? s_blink_b : 0);
 
     // Restart one-shot for next toggle (periodic timer replaced by self-rescheduling one-shot)
-    if (s_jiggler_active && s_state == WIFI_MGR_STATE_CONNECTED) {
+    if (s_fido2_pending && !s_web_ui_active) {
+        esp_timer_start_once(s_led_timer, s_led_on ? LED_FIDO_ON_US : LED_FIDO_OFF_US);
+    } else if (s_jiggler_active && s_state == WIFI_MGR_STATE_CONNECTED) {
         esp_timer_start_once(s_led_timer, s_led_on ? LED_JIG_ON_US : LED_JIG_OFF_US);
     } else if (s_state != WIFI_MGR_STATE_CONNECTED) {
         esp_timer_start_once(s_led_timer, LED_FAST_US);
@@ -386,4 +405,10 @@ void wifi_manager_led_blink_once(void)
     led_set(WHITE_R, WHITE_G, WHITE_B);
     s_led_on = true;
     esp_timer_start_once(s_pulse_timer, LED_PULSE_US);
+}
+
+void wifi_manager_set_fido2_pending(bool pending)
+{
+    s_fido2_pending = pending;
+    led_apply();
 }

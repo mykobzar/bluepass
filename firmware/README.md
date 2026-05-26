@@ -10,6 +10,8 @@ After flashing, use **Settings → Board** to configure the correct GPIO pins fo
 
 | Version | Date | Notes |
 |---|---|---|
+| **2.0.1-beta** | 2026-05-26 | FIDO2/Passkey authenticator: CTAP2 over USB HID, clientPIN, resident keys, user-presence confirm via button; dual USB HID interfaces (keyboard + FIDO2); Passkey tab in web UI |
+| **2.0.0-beta** | 2026-05-26 | v2.0 foundation: separate installer page, multi-role connection modes (BT-USB, BT-BT, USB-BT) |
 | **1.1.2** | 2026-05-25 | UI polish: Hotkeys/Flash Encryption rename, mode labels, tab descriptions, key code reference page, status on WiFi/MQTT tabs, BLE log spoiler; LED gamma correction (brightness default 4→20%) |
 | **1.0.0** | 2026-05-25 | First stable release; all 0.9.x features promoted to 1.0: BT→USB bridge, passwords, TOTP, jiggler, OTA, Info/Security/Board tabs |
 | 0.9.14 | 2026-05-23 | Board tab: configurable button GPIO, RGB LED with brightness, simple LED support; expanded README with compatible boards |
@@ -25,6 +27,32 @@ After flashing, use **Settings → Board** to configure the correct GPIO pins fo
 | 0.9.4 | 2026-05-20 | Logout button; fix LED race condition; fix OTA (rollback state + upload stack overflow) |
 | 0.9.3 | 2026-05-20 | LED rework; web UI auto-off (5 min idle); fix USB HID character skip |
 | 0.9.2 | 2025-05-20 | Initial release |
+
+---
+
+## Files — v2.0.1-beta
+
+Two variants are available.  Use the **standard** variant for a normal install.  Use the **encrypted** variant if you want hardware-level AES-XTS flash encryption.
+
+### Standard (no encryption)
+
+| File | Flash address | Description |
+|---|---|---|
+| `bootloader-2.0.1-beta.bin` | `0x0` | Second-stage bootloader |
+| `partition-table-2.0.1-beta.bin` | `0x8000` | Partition layout (NVS + dual OTA slots) |
+| `ota_data_initial-2.0.1-beta.bin` | `0x10000` | OTA slot selector (initial state) |
+| `bluepass-2.0.1-beta.bin` | `0x20000` | Main application |
+
+### With flash encryption (recommended)
+
+| File | Flash address | Description |
+|---|---|---|
+| `bootloader-2.0.1-beta-enc.bin` | `0x0` | Bootloader with encryption support |
+| `partition-table-2.0.1-beta-enc.bin` | `0x8000` | Partition layout |
+| `ota_data_initial-2.0.1-beta-enc.bin` | `0x10000` | OTA slot selector |
+| `bluepass-2.0.1-beta-enc.bin` | `0x20000` | Main application (encryption-enabled build) |
+
+> **Note:** v2.x is a beta branch — FIDO2/Passkey support is in active development.  For stable production use, see v1.1.2 below.
 
 ---
 

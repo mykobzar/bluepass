@@ -18,11 +18,17 @@
 #include "jiggler.h"
 #include "webhook.h"
 #include "mqtt_mgr.h"
+#include "fido2.h"
 #include "esp_ota_ops.h"
 
 static void on_jiggler_state(bool enabled)
 {
     wifi_manager_set_jiggler_active(enabled);
+}
+
+static void fido2_tx_wrapper(const uint8_t *buf)
+{
+    usb_hid_fido2_send(buf);
 }
 
 #define TAG "bluepass"
@@ -61,11 +67,13 @@ static const hid_output_ops_t s_ble_out = {
 
 static void on_ble_report(const bluepass_hid_report_t *report, void *ctx)
 {
+    if (fido2_intercept_key(report->keyboard.modifier, report->keyboard.keycode[0])) return;
     hotkey_engine_process(report);
 }
 
 static void on_usb_report(const bluepass_hid_report_t *report, void *ctx)
 {
+    if (fido2_intercept_key(report->keyboard.modifier, report->keyboard.keycode[0])) return;
     hotkey_engine_process(report);
 }
 
@@ -75,7 +83,10 @@ static void btn_task(void *arg)
 {
     for (;;) {
         ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
-        if (web_ui_is_running()) {
+        if (fido2_pending_up()) {
+            fido2_confirm_up();
+            ESP_LOGI(TAG, "FIDO2 UP confirmed via button");
+        } else if (web_ui_is_running()) {
             web_ui_stop();
             ESP_LOGI(TAG, "web UI stopped");
         } else {
@@ -199,10 +210,15 @@ void app_main(void)
         ESP_ERROR_CHECK(web_ui_start());
     }
 
+    ESP_ERROR_CHECK(fido2_init());
+
     // USB init — mode determines device vs host.
     // TinyUSB switches USB PHY from JTAG to OTG; must be last.
     if (mode == CONN_MODE_BT_USB) {
         ESP_ERROR_CHECK(usb_hid_device_init());
+        // Wire FIDO2 ↔ USB HID
+        usb_hid_fido2_set_rx_cb(fido2_on_hid_rx);
+        fido2_register_tx(fido2_tx_wrapper);
     } else if (mode == CONN_MODE_USB_BT) {
         ESP_ERROR_CHECK(usb_hid_host_init(on_usb_report, NULL));
     }

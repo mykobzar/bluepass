@@ -12,14 +12,40 @@
 #define TAG "usb_hid"
 #define REPORT_ID_KEYBOARD 1
 #define REPORT_ID_CONSUMER 2
-#define EPNUM_HID          0x81   // Endpoint 1, IN direction
+#define EPNUM_HID          0x81   // Endpoint 1 IN — keyboard
+#define EPNUM_FIDO_IN      0x82   // Endpoint 2 IN — FIDO2
+#define EPNUM_FIDO_OUT     0x02   // Endpoint 2 OUT — FIDO2
 #define TYPE_INTER_KEY_MS  10     // ms between key-down and key-up when typing
+
+static fido2_rx_cb_t s_fido2_rx_cb;
+
+void usb_hid_fido2_set_rx_cb(fido2_rx_cb_t cb) { s_fido2_rx_cb = cb; }
 
 // ── HID descriptors ──────────────────────────────────────────────────────────
 
 static const uint8_t s_hid_report_desc[] = {
     TUD_HID_REPORT_DESC_KEYBOARD(HID_REPORT_ID(REPORT_ID_KEYBOARD)),
     TUD_HID_REPORT_DESC_CONSUMER(HID_REPORT_ID(REPORT_ID_CONSUMER)),
+};
+
+// FIDO Alliance usage page 0xF1D0, CTAP HID usage 0x01, no report IDs, 64-byte IN+OUT
+static const uint8_t s_fido2_report_desc[] = {
+    0x06, 0xD0, 0xF1,        // Usage Page (FIDO Alliance)
+    0x09, 0x01,              // Usage (CTAP HID Device)
+    0xA1, 0x01,              // Collection (Application)
+    0x09, 0x20,              //   Usage (Input Report Data)
+    0x15, 0x00,              //   Logical Minimum (0)
+    0x26, 0xFF, 0x00,        //   Logical Maximum (255)
+    0x75, 0x08,              //   Report Size (8)
+    0x95, 0x40,              //   Report Count (64)
+    0x81, 0x02,              //   Input (Data, Variable, Absolute)
+    0x09, 0x21,              //   Usage (Output Report Data)
+    0x15, 0x00,
+    0x26, 0xFF, 0x00,
+    0x75, 0x08,
+    0x95, 0x40,
+    0x91, 0x02,              //   Output (Data, Variable, Absolute)
+    0xC0                     // End Collection
 };
 
 static const tusb_desc_device_t s_desc_device = {
@@ -31,22 +57,26 @@ static const tusb_desc_device_t s_desc_device = {
     .bDeviceProtocol    = 0x00,
     .bMaxPacketSize0    = CFG_TUD_ENDPOINT0_SIZE,
     .idVendor           = 0x303A,  // Espressif
-    .idProduct          = 0x4002,  // Bluepass HID keyboard
-    .bcdDevice          = 0x0100,
+    .idProduct          = 0x4002,  // Bluepass HID + FIDO2
+    .bcdDevice          = 0x0200,
     .iManufacturer      = 0x01,
     .iProduct           = 0x02,
     .iSerialNumber      = 0x03,
     .bNumConfigurations = 0x01,
 };
 
-#define CONFIG_TOTAL_LEN  (TUD_CONFIG_DESC_LEN + TUD_HID_DESC_LEN)
+#define CONFIG_TOTAL_LEN  (TUD_CONFIG_DESC_LEN + TUD_HID_DESC_LEN + TUD_HID_INOUT_DESC_LEN)
 static const uint8_t s_config_desc[] = {
-    // bConfigurationValue, bNumInterfaces, iConfiguration, bmAttributes, bMaxPower (×2 mA)
-    TUD_CONFIG_DESCRIPTOR(1, 1, 0, CONFIG_TOTAL_LEN, 0x00, 100),
-    // bInterfaceNumber, iInterface, bInterfaceProtocol, wDescriptorLength, epIN addr, epSize, bInterval
+    TUD_CONFIG_DESCRIPTOR(1, 2, 0, CONFIG_TOTAL_LEN, 0x00, 100),
+    // Interface 0: keyboard + consumer
     TUD_HID_DESCRIPTOR(0, 0, HID_ITF_PROTOCOL_NONE,
                        sizeof(s_hid_report_desc),
-                       EPNUM_HID, CFG_TUD_HID_EP_BUFSIZE, 5)
+                       EPNUM_HID, CFG_TUD_HID_EP_BUFSIZE, 5),
+    // Interface 1: FIDO2 CTAP HID (IN + OUT endpoints)
+    TUD_HID_INOUT_DESCRIPTOR(1, 0, HID_ITF_PROTOCOL_NONE,
+                              sizeof(s_fido2_report_desc),
+                              EPNUM_FIDO_IN, EPNUM_FIDO_OUT,
+                              CFG_TUD_HID_EP_BUFSIZE, 5)
 };
 
 static const char *s_string_desc[] = {
@@ -234,17 +264,30 @@ esp_err_t usb_hid_device_type_unicode(uint32_t codepoint)
     return ESP_OK;
 }
 
+esp_err_t usb_hid_fido2_send(const uint8_t *buf64)
+{
+    // Wait up to 20 ms for endpoint ready
+    for (int i = 0; i < 10; i++) {
+        if (tud_hid_n_ready(1)) {
+            return tud_hid_n_report(1, 0, buf64, 64) ? ESP_OK : ESP_FAIL;
+        }
+        vTaskDelay(pdMS_TO_TICKS(2));
+    }
+    return ESP_ERR_TIMEOUT;
+}
+
 // ── TinyUSB required callbacks ────────────────────────────────────────────────
 
 uint8_t const *tud_hid_descriptor_report_cb(uint8_t instance)
 {
-    return s_hid_report_desc;
+    return (instance == 1) ? s_fido2_report_desc : s_hid_report_desc;
 }
 
 uint16_t tud_hid_get_report_cb(uint8_t instance, uint8_t report_id,
                                 hid_report_type_t report_type,
                                 uint8_t *buffer, uint16_t reqlen)
 {
+    (void)instance; (void)report_id; (void)report_type; (void)buffer; (void)reqlen;
     return 0;
 }
 
@@ -252,4 +295,7 @@ void tud_hid_set_report_cb(uint8_t instance, uint8_t report_id,
                             hid_report_type_t report_type,
                             uint8_t const *buffer, uint16_t bufsize)
 {
+    (void)report_id; (void)report_type;
+    if (instance == 1 && bufsize >= 64 && s_fido2_rx_cb)
+        s_fido2_rx_cb(buffer);
 }

@@ -22,7 +22,7 @@ CONFIG_BT_NIMBLE_SM_LEGACY=y
 # USB — TinyUSB HID device via ESP32-S3 native USB OTG
 # Managed component espressif/esp_tinyusb is declared in
 # components/usb_hid_device/idf_component.yml
-CONFIG_TINYUSB_HID_COUNT=1
+CONFIG_TINYUSB_HID_COUNT=2
 CONFIG_TINYUSB_HID_BUFSIZE=64
 
 # WiFi — AMPDU not needed for low-throughput config traffic

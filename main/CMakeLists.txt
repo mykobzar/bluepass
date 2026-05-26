@@ -3,6 +3,7 @@ idf_component_register(
     INCLUDE_DIRS "."
     REQUIRES
         storage
+        fido2
         ble_hid_host
         ble_hid_device
         usb_hid_device

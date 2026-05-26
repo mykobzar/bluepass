@@ -1,0 +1,16 @@
+{
+  "name": "Bluepass (with flash encryption)",
+  "version": "2.0.1-beta-enc",
+  "new_install_prompt_erase": true,
+  "builds": [
+    {
+      "chipFamily": "ESP32-S3",
+      "parts": [
+        { "path": "https://raw.githubusercontent.com/mykobzar/bluepass/dev/2.0/firmware/bootloader-2.0.1-beta-enc.bin",         "offset": 0 },
+        { "path": "https://raw.githubusercontent.com/mykobzar/bluepass/dev/2.0/firmware/partition-table-2.0.1-beta-enc.bin",    "offset": 32768 },
+        { "path": "https://raw.githubusercontent.com/mykobzar/bluepass/dev/2.0/firmware/ota_data_initial-2.0.1-beta-enc.bin",   "offset": 65536 },
+        { "path": "https://raw.githubusercontent.com/mykobzar/bluepass/dev/2.0/firmware/bluepass-2.0.1-beta-enc.bin",           "offset": 131072 }
+      ]
+    }
+  ]
+}
