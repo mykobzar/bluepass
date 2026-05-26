@@ -5,12 +5,12 @@
 ![Version](https://img.shields.io/badge/version-1.1.2-blue)
 ![ESP-IDF](https://img.shields.io/badge/ESP--IDF-v5.2%2B-blue)
 ![Target](https://img.shields.io/badge/target-ESP32--S3-informational)
-![License](https://img.shields.io/badge/license-MIT-green)
-![ESPHome](https://img.shields.io/badge/ESPHome-Validated-00bcd4?style=flat-square&logo=esphome&logoColor=white)
-![Smart Home](https://img.shields.io/badge/Focus-Smart_Home-success?style=for-the-badge&logo=homeassistant)
-![USB HID](https://img.shields.io/badge/Class-USB_HID-green?style=flat-square&logo=probot&logoColor=white)
-![MQTT](https://img.shields.io/badge/MQTT-Enabled-660066?style=flat-square&logo=mqtt&logoColor=white)
+![USB](https://img.shields.io/badge/Interface-USB-blue?style=flat-square&logo=usb&logoColor=white)
 ![Bluetooth](https://img.shields.io/badge/Bluetooth-Enabled-0082FC?style=flat-square&logo=bluetooth&logoColor=white)
+![HID](https://img.shields.io/badge/Protocol-HID-green?style=flat-square)
+![Smart Home](https://img.shields.io/badge/Focus-Smart_Home-success?style=flat-square&logo=homeassistant)
+![MQTT](https://img.shields.io/badge/MQTT-Enabled-660066?style=flat-square&logo=mqtt&logoColor=white)
+
 
 **[⚡ Install in browser](https://mykobzar.github.io/bluepass/)** — no toolchain needed, Chrome/Edge only
 
