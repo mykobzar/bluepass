@@ -1361,6 +1361,25 @@ static esp_err_t handler_passkey_rk_delete(httpd_req_t *req)
     return send_ok(req);
 }
 
+static esp_err_t handler_passkey_diag_get(httpd_req_t *req)
+{
+    char *log = malloc(1056);
+    if (!log) { httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "oom"); return ESP_FAIL; }
+    fido2_diag_get(log, 1056);
+    cJSON *obj = cJSON_CreateObject();
+    cJSON_AddStringToObject(obj, "log", log);
+    free(log);
+    send_json(req, obj);
+    cJSON_Delete(obj);
+    return ESP_OK;
+}
+
+static esp_err_t handler_passkey_diag_clear(httpd_req_t *req)
+{
+    fido2_diag_clear();
+    return send_ok(req);
+}
+
 // ── Server start/stop ─────────────────────────────────────────────────────────
 
 esp_err_t web_ui_init(void)
@@ -1437,6 +1456,8 @@ esp_err_t web_ui_start(void)
         { .uri = "/api/passkey/key",       .method = HTTP_POST,   .handler = handler_passkey_regen_key },
         { .uri = "/api/passkey/rk",        .method = HTTP_GET,    .handler = handler_passkey_rk_get },
         { .uri = "/api/passkey/rk/*",      .method = HTTP_DELETE, .handler = handler_passkey_rk_delete },
+        { .uri = "/api/passkey/diag",      .method = HTTP_GET,    .handler = handler_passkey_diag_get },
+        { .uri = "/api/passkey/diag",      .method = HTTP_DELETE, .handler = handler_passkey_diag_clear },
     };
     for (size_t i = 0; i < sizeof(routes) / sizeof(routes[0]); i++) {
         httpd_register_uri_handler(s_server, &routes[i]);

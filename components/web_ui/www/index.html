@@ -738,6 +738,17 @@
       <div id="pk-reset-msg" class="status"></div>
     </div>
   </details>
+
+  <details id="pk-diag-details" style="margin-top:1rem">
+    <summary style="cursor:pointer;font-size:0.9rem;color:var(--dim)">FIDO2 diagnostic log</summary>
+    <div style="margin-top:0.5rem">
+      <div style="display:flex;gap:0.5rem;margin-bottom:0.4rem">
+        <button onclick="loadPasskeyDiag()" style="font-size:0.82rem;padding:0.2rem 0.7rem">Refresh</button>
+        <button onclick="clearPasskeyDiag()" style="font-size:0.82rem;padding:0.2rem 0.7rem;border-color:#c55;color:#c55">Clear</button>
+      </div>
+      <pre id="pk-diag-log" style="font-size:0.78rem;background:var(--bg2);border:1px solid var(--border);border-radius:4px;padding:0.6rem;min-height:3rem;max-height:16rem;overflow-y:auto;white-space:pre-wrap;word-break:break-all;color:var(--fg)">—</pre>
+    </div>
+  </details>
 </div>
 
 <script>
@@ -967,7 +978,7 @@ function show(name) {
   if (name === 'board')    { loadBoard(); }
   if (name === 'webhook')  { loadWebhook(); }
   if (name === 'mqtt' || name === 'mqtt-out' || name === 'mqtt-in') { loadMqtt(); }
-  if (name === 'passkey')     { loadPasskey(); }
+  if (name === 'passkey')     { loadPasskey(); loadPasskeyDiag(); }
   if (name === 'passkey-key') { loadPasskeyKey(); }
   if (name === 'totp') {
     updateTotpClock();
@@ -2236,6 +2247,23 @@ async function savePasskeyConfirmKey() {
     });
     st.textContent = r.ok ? 'Saved.' : 'Error.';
   } catch(e) { st.textContent = 'Error: ' + e; }
+}
+
+async function loadPasskeyDiag() {
+  const el = document.getElementById('pk-diag-log');
+  if (!el) return;
+  try {
+    const r = await fetch('/api/passkey/diag');
+    if (!r.ok) { el.textContent = 'Error ' + r.status; return; }
+    const d = await r.json();
+    el.textContent = d.log || '(empty)';
+    el.scrollTop = el.scrollHeight;
+  } catch(e) { el.textContent = 'Error: ' + e; }
+}
+
+async function clearPasskeyDiag() {
+  await fetch('/api/passkey/diag', { method: 'DELETE' });
+  loadPasskeyDiag();
 }
 
 loadVersion();

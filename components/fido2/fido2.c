@@ -16,6 +16,7 @@
 #include "mbedtls/md.h"
 #include <string.h>
 #include <stdio.h>
+#include <stdarg.h>
 
 #define TAG "fido2"
 
@@ -106,6 +107,72 @@ static bool     s_pin_token_valid;
 
 // Send callback registered by usb_hid_device
 static void (*s_tx_cb)(const uint8_t *buf);
+
+// ── Diagnostic log (read via GET /api/passkey/diag) ──────────────────────────
+
+#define DIAG_SIZE 1024
+static char     s_diag_buf[DIAG_SIZE];
+static size_t   s_diag_len = 0;
+static uint32_t s_diag_seq = 0;
+
+static void diag_append(const char *fmt, ...) {
+    char tmp[160];
+    va_list ap;
+    va_start(ap, fmt);
+    int n = vsnprintf(tmp, sizeof(tmp), fmt, ap);
+    va_end(ap);
+    if (n <= 0) return;
+    if (s_diag_len + (size_t)n >= DIAG_SIZE) {
+        // Drop oldest line to make room
+        char *nl = memchr(s_diag_buf, '\n', s_diag_len);
+        if (nl) {
+            size_t skip = (size_t)(nl - s_diag_buf) + 1;
+            memmove(s_diag_buf, s_diag_buf + skip, s_diag_len - skip);
+            s_diag_len -= skip;
+        } else {
+            s_diag_len = 0; // no newline found, clear entirely
+        }
+    }
+    memcpy(s_diag_buf + s_diag_len, tmp, (size_t)n);
+    s_diag_len += (size_t)n;
+    s_diag_buf[s_diag_len] = '\0';
+}
+
+static const char *ctap_status_name(uint8_t s) {
+    switch (s) {
+    case 0x00: return "OK";
+    case 0x01: return "invalidCmd";
+    case 0x12: return "invalidCBOR";
+    case 0x14: return "missingParam";
+    case 0x27: return "operationDenied";
+    case 0x30: return "notAllowed";
+    case 0x31: return "pinInvalid";
+    case 0x32: return "pinBlocked";
+    case 0x33: return "pinAuthInvalid";
+    case 0x34: return "pinAuthBlocked";
+    case 0x35: return "pinNotSet";
+    case 0x36: return "pinRequired";
+    case 0x37: return "pinPolicyViolation";
+    case 0x3A: return "actionTimeout";
+    case 0x3B: return "upRequired";
+    default:   return "err";
+    }
+}
+
+// Called from ctap2_respond — logs the response for the current command
+static const char *s_diag_cmd = "";  // set before each cmd_* call
+
+void fido2_diag_get(char *buf, size_t maxlen) {
+    size_t n = s_diag_len < maxlen - 1 ? s_diag_len : maxlen - 1;
+    memcpy(buf, s_diag_buf, n);
+    buf[n] = '\0';
+}
+
+void fido2_diag_clear(void) {
+    s_diag_len = 0;
+    s_diag_buf[0] = '\0';
+    s_diag_seq = 0;
+}
 
 // ── CBOR encoder ─────────────────────────────────────────────────────────────
 
@@ -422,7 +489,11 @@ static void ctaphid_keepalive(uint32_t cid, uint8_t status) {
 
 // Send a CTAP2 response (prepend status byte to cbor_body)
 static void ctap2_respond(uint32_t cid, uint8_t status, const uint8_t *body, size_t body_len) {
-    // Allocate on heap to avoid large stack frames
+    diag_append("#%lu %s → %s(0x%02X)\n",
+                (unsigned long)++s_diag_seq, s_diag_cmd,
+                ctap_status_name(status), status);
+    ESP_LOGI(TAG, "%s → 0x%02X %s", s_diag_cmd, status, ctap_status_name(status));
+
     uint8_t *buf = malloc(1 + body_len);
     if (!buf) { ctaphid_error(cid, 0x27); return; }
     buf[0] = status;
@@ -943,7 +1014,16 @@ static void cmd_client_pin(uint32_t cid, const uint8_t *req, size_t req_len) {
         ctap2_respond(cid, CTAP2_ERR_INVALID_CBOR, NULL, 0); return;
     }
     uint8_t subcmd = (uint8_t)subcmd_item.val;
-    ESP_LOGI(TAG, "clientPIN subcmd=0x%02x", subcmd);
+    static char s_pin_cmd_name[32];
+    switch (subcmd) {
+    case CTAP2_SUBCMD_GET_RETRIES:   snprintf(s_pin_cmd_name, sizeof(s_pin_cmd_name), "clientPIN.getRetries");       break;
+    case CTAP2_SUBCMD_GET_KEY_AGREE: snprintf(s_pin_cmd_name, sizeof(s_pin_cmd_name), "clientPIN.getKeyAgreement");  break;
+    case CTAP2_SUBCMD_SET_PIN:       snprintf(s_pin_cmd_name, sizeof(s_pin_cmd_name), "clientPIN.setPIN");           break;
+    case CTAP2_SUBCMD_CHANGE_PIN:    snprintf(s_pin_cmd_name, sizeof(s_pin_cmd_name), "clientPIN.changePIN");        break;
+    case CTAP2_SUBCMD_GET_PIN_TOKEN: snprintf(s_pin_cmd_name, sizeof(s_pin_cmd_name), "clientPIN.getPINToken");      break;
+    default:                         snprintf(s_pin_cmd_name, sizeof(s_pin_cmd_name), "clientPIN.sub0x%02X", subcmd); break;
+    }
+    s_diag_cmd = s_pin_cmd_name;
 
     fido2_config_t cfg = {0};
     storage_get_fido2_config(&cfg);
@@ -1263,25 +1343,31 @@ static void ctaphid_dispatch(uint32_t cid, uint8_t cmd,
         uint8_t ctap_cmd = data[0];
         const uint8_t *cbor = data + 1;
         size_t cbor_len = len - 1;
-        ESP_LOGI(TAG, "CBOR cmd=0x%02x len=%u", ctap_cmd, (unsigned)cbor_len);
 
         switch (ctap_cmd) {
         case CTAP2_CMD_GET_INFO:
+            s_diag_cmd = "getInfo";
             cmd_get_info(cid);
             break;
         case CTAP2_CMD_MAKE_CREDENTIAL:
+            s_diag_cmd = "makeCredential";
             cmd_make_credential(cid, cbor, cbor_len);
             break;
         case CTAP2_CMD_GET_ASSERTION:
+            s_diag_cmd = "getAssertion";
             cmd_get_assertion(cid, cbor, cbor_len);
             break;
         case CTAP2_CMD_CLIENT_PIN:
+            s_diag_cmd = "clientPIN";  // refined inside cmd_client_pin
             cmd_client_pin(cid, cbor, cbor_len);
             break;
         case CTAP2_CMD_RESET:
+            s_diag_cmd = "reset";
             cmd_reset(cid);
             break;
         default:
+            s_diag_cmd = "unknownCmd";
+            diag_append("  unknown CTAP cmd=0x%02X\n", ctap_cmd);
             ctap2_respond(cid, CTAP1_ERR_INVALID_COMMAND, NULL, 0);
             break;
         }
