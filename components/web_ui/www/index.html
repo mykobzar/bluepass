@@ -148,7 +148,7 @@
   <button onclick="show('log')">Info</button>
   <button onclick="show('connection')">Connection</button>
   <button onclick="show('text')">Hotkeys</button>
-  <button id="nav-passkey-btn" onclick="show('passkey')" style="display:none">Passkey</button>
+  <button id="nav-passkey-btn" onclick="show('passkey-key')" style="display:none">Passkey</button>
   <button onclick="show('wifi')">Settings</button>
 </nav>
 <nav id="activities-nav">
@@ -159,7 +159,6 @@
   <button onclick="show('webhook')">Webhook</button>
   <button id="act-mqtt-out" onclick="show('mqtt-out')" style="display:none">MQTT Out</button>
   <button id="act-mqtt-in" onclick="show('mqtt-in')" style="display:none">MQTT In</button>
-  <button id="act-passkey-key" onclick="show('passkey-key')" style="display:none">Passkey</button>
 </nav>
 <nav id="settings-nav">
   <button onclick="show('wifi')">WiFi</button>
@@ -167,6 +166,7 @@
   <button onclick="show('mqtt')">MQTT</button>
   <button onclick="show('ota')">Firmware</button>
   <button onclick="show('security')">Flash Encryption</button>
+  <button onclick="show('passkey')">Passkey</button>
 </nav>
 
 <!-- Info -->
@@ -661,9 +661,9 @@
   <button id="mqtt-out-cancel-btn" onclick="cancelMqttOutEdit()" style="display:none;margin-left:0.4rem">Cancel</button>
 </div>
 
-<!-- Passkey (FIDO2 confirm-key, shown only when FIDO2 enabled) -->
+<!-- Passkey (root-nav, shown only when FIDO2 enabled) -->
 <div id="tab-passkey-key" class="tab">
-  <h3>Passkey &#8594; Confirm Key</h3>
+  <h3>Passkey</h3>
   <p class="tab-desc">When a website asks you to tap your security key, the device waits for you to press a key on the keyboard or the physical button. Configure which key triggers confirmation here.</p>
   <label>Confirm hotkey
     <input id="pk-confirm-hotkey" type="text" placeholder="e.g. &lt;Ctrl&gt;+&lt;Shift&gt;+&lt;Y&gt; or leave empty for button-only">
@@ -695,18 +695,11 @@
 <!-- Passkey (Settings tab) -->
 <div id="tab-passkey" class="tab">
   <h3>Passkey</h3>
-  <p class="tab-desc">Bluepass can act as a FIDO2 / WebAuthn security key over USB. When enabled, websites that support passkeys can register this device as an authenticator. User presence is confirmed via the physical button or a configured hotkey.</p>
 
   <fieldset style="margin-bottom:1.2rem;padding:0.8rem 1rem;border:1px solid var(--border);border-radius:4px">
     <legend style="padding:0 0.4rem;font-size:0.88rem;color:var(--dim)">General</legend>
     <label style="display:inline-flex;align-items:center;gap:0.5rem;margin-bottom:0.7rem">
       <input id="pk-enabled" type="checkbox"> Enable FIDO2 / Passkey
-    </label>
-    <label>UV mode
-      <select id="pk-uv-mode" style="width:100%;margin-top:0.2rem">
-        <option value="0">UP only — button press, no PIN required</option>
-        <option value="1">UP + UV — button press + PIN required</option>
-      </select>
     </label>
   </fieldset>
 
@@ -961,8 +954,8 @@ function show(name) {
   document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
   document.getElementById('tab-' + name).classList.add('active');
   const mainNavVisible  = document.getElementById('main-nav').style.display !== 'none';
-  const settingsTabs    = ['wifi','board','mqtt','ota','security'];
-  const activitiesTabs  = ['text','passwords','totp','jiggler','list','webhook','mqtt-out','mqtt-in','passkey-key'];
+  const settingsTabs    = ['wifi','board','mqtt','ota','security','passkey'];
+  const activitiesTabs  = ['text','passwords','totp','jiggler','list','webhook','mqtt-out','mqtt-in'];
   document.getElementById('settings-nav').style.display =
     (mainNavVisible && settingsTabs.includes(name)) ? 'block' : 'none';
   document.getElementById('activities-nav').style.display =
@@ -974,7 +967,8 @@ function show(name) {
   if (name === 'board')    { loadBoard(); }
   if (name === 'webhook')  { loadWebhook(); }
   if (name === 'mqtt' || name === 'mqtt-out' || name === 'mqtt-in') { loadMqtt(); }
-  if (name === 'passkey')  { loadPasskey(); }
+  if (name === 'passkey')     { loadPasskey(); }
+  if (name === 'passkey-key') { loadPasskeyKey(); }
   if (name === 'totp') {
     updateTotpClock();
     if (!s_totpTimer) s_totpTimer = setInterval(updateTotpClock, 1000);
@@ -2125,8 +2119,7 @@ let s_passkeyData = null;
 async function loadPasskeyNav() {
   try {
     const d = await fetch('/api/passkey').then(r => r.json());
-    document.getElementById('nav-passkey-btn').style.display   = 'inline';
-    document.getElementById('act-passkey-key').style.display   = d.enabled ? 'inline' : 'none';
+    document.getElementById('nav-passkey-btn').style.display = d.enabled ? 'inline' : 'none';
   } catch(_) {}
 }
 
@@ -2135,23 +2128,22 @@ async function loadPasskey() {
     const d = await fetch('/api/passkey').then(r => r.json());
     s_passkeyData = d;
     document.getElementById('pk-enabled').checked = !!d.enabled;
-    document.getElementById('pk-uv-mode').value   = d.uv_mode || 0;
 
     const pinLine = document.getElementById('pk-pin-status-line');
     pinLine.textContent = d.pin_set ? 'PIN is set. Enter a new PIN to change it.' : 'No PIN set.';
     pinLine.style.color = d.pin_set ? '#4caf50' : '#ff9800';
 
-    // Load confirm key into passkey-key tab
+    loadPasskeyRK();
+    document.getElementById('nav-passkey-btn').style.display = d.enabled ? 'inline' : 'none';
+  } catch(e) { console.error('loadPasskey', e); }
+}
+
+async function loadPasskeyKey() {
+  try {
+    const d = await fetch('/api/passkey').then(r => r.json());
     const combo = formatComboRaw(d.confirm_modifiers, d.confirm_keycode);
     document.getElementById('pk-confirm-hotkey').value = combo;
-
-    // Load resident keys
-    loadPasskeyRK();
-
-    // Show/hide nav button
-    document.getElementById('nav-passkey-btn').style.display   = 'inline';
-    document.getElementById('act-passkey-key').style.display   = d.enabled ? 'inline' : 'none';
-  } catch(e) { console.error('loadPasskey', e); }
+  } catch(e) { console.error('loadPasskeyKey', e); }
 }
 
 async function loadPasskeyRK() {
@@ -2186,12 +2178,10 @@ async function savePasskeyConfig() {
   try {
     const r = await fetch('/api/passkey', {
       method: 'POST', headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({ enabled, uv_mode: parseInt(document.getElementById('pk-uv-mode').value) })
+      body: JSON.stringify({ enabled })
     });
     st.textContent = r.ok ? 'Saved.' : 'Error.';
-    // Show/hide nav button based on new enabled state
-    document.getElementById('nav-passkey-btn').style.display   = 'inline';
-    document.getElementById('act-passkey-key').style.display   = enabled ? 'inline' : 'none';
+    document.getElementById('nav-passkey-btn').style.display = enabled ? 'inline' : 'none';
   } catch(e) { st.textContent = 'Error: ' + e; }
 }
 

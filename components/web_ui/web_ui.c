@@ -1229,7 +1229,7 @@ static esp_err_t handler_mqtt_in_delete(httpd_req_t *req)
 
 // ── Passkey (FIDO2/CTAP2) API ─────────────────────────────────────────────────
 // GET    /api/passkey        → config + rk_count + pending_up
-// POST   /api/passkey        → {enabled, uv_mode, confirm_modifiers, confirm_keycode}
+// POST   /api/passkey        → {enabled, confirm_modifiers, confirm_keycode}
 // POST   /api/passkey/pin    → {pin:"..."} set/change PIN (plain text, local WiFi only)
 // POST   /api/passkey/key    → regenerate master key
 // DELETE /api/passkey        → factory reset
@@ -1242,7 +1242,6 @@ static esp_err_t handler_passkey_get(httpd_req_t *req)
     storage_get_fido2_config(&cfg);
     cJSON *obj = cJSON_CreateObject();
     cJSON_AddBoolToObject  (obj, "enabled",           cfg.enabled);
-    cJSON_AddNumberToObject(obj, "uv_mode",           cfg.uv_mode);
     cJSON_AddNumberToObject(obj, "confirm_modifiers", cfg.confirm_modifiers);
     cJSON_AddNumberToObject(obj, "confirm_keycode",   cfg.confirm_keycode);
     cJSON_AddNumberToObject(obj, "rk_count",          cfg.rk_count);
@@ -1266,7 +1265,6 @@ static esp_err_t handler_passkey_post(httpd_req_t *req)
     storage_get_fido2_config(&cfg);
     cJSON *v;
     if ((v = cJSON_GetObjectItem(json, "enabled"))           && cJSON_IsBool(v))   cfg.enabled           = cJSON_IsTrue(v) ? 1 : 0;
-    if ((v = cJSON_GetObjectItem(json, "uv_mode"))           && cJSON_IsNumber(v)) cfg.uv_mode           = (uint8_t)v->valueint;
     if ((v = cJSON_GetObjectItem(json, "confirm_modifiers")) && cJSON_IsNumber(v)) cfg.confirm_modifiers = (uint8_t)v->valueint;
     if ((v = cJSON_GetObjectItem(json, "confirm_keycode"))   && cJSON_IsNumber(v)) cfg.confirm_keycode   = (uint8_t)v->valueint;
     cJSON_Delete(json);

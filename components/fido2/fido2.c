@@ -423,16 +423,13 @@ static void ctap2_respond(uint32_t cid, uint8_t status, const uint8_t *body, siz
 // ── CTAP2 command: getInfo ────────────────────────────────────────────────────
 
 static void cmd_get_info(uint32_t cid) {
-    fido2_config_t cfg = {0};
-    storage_get_fido2_config(&cfg);
     bool pin_set = storage_fido2_has_pin();
-    bool uv = (cfg.uv_mode == 1) && pin_set;
 
     uint8_t buf[256];
     cbor_enc_t e;
     ce_init(&e, buf, sizeof(buf));
 
-    ce_map(&e, 7);
+    ce_map(&e, 5);
 
     ce_uint(&e, 0x01); ce_arr(&e, 1); ce_tstr(&e, "FIDO_2_0"); // versions
 
@@ -442,20 +439,13 @@ static void cmd_get_info(uint32_t cid) {
     ce_map(&e, 5);
     ce_tstr(&e, "rk");        ce_bool(&e, true);
     ce_tstr(&e, "up");        ce_bool(&e, true);
-    ce_tstr(&e, "uv");        ce_bool(&e, uv);
+    ce_tstr(&e, "uv");        ce_bool(&e, pin_set);
     ce_tstr(&e, "plat");      ce_bool(&e, false);
     ce_tstr(&e, "clientPin"); ce_bool(&e, pin_set);
 
+    ce_uint(&e, 0x05); ce_uint(&e, 2048);                        // maxMsgSize
+
     ce_uint(&e, 0x06); ce_arr(&e, 1); ce_uint(&e, 1);           // pinUvAuthProtocols: [1]
-
-    ce_uint(&e, 0x07); ce_uint(&e, 2048);                        // maxMsgSize
-
-    ce_uint(&e, 0x08); ce_arr(&e, 1);                            // pubKeyCredParams
-    ce_map(&e, 2);
-    ce_tstr(&e, "type"); ce_tstr(&e, "public-key");
-    ce_tstr(&e, "alg");  ce_nint(&e, -7);
-
-    ce_uint(&e, 0x09); ce_uint(&e, 1);                           // firmwareVersion
 
     ctap2_respond(cid, CTAP2_OK, buf, e.pos);
 }
@@ -603,17 +593,17 @@ static void cmd_make_credential(uint32_t cid, const uint8_t *req, size_t req_len
         }
     }
 
-    // PIN verification if UV mode enabled and PIN is set
+    // UV via PIN: honour what the relying party requests
     bool uv_flag = false;
-    if (cfg.uv_mode == 1 && storage_fido2_has_pin()) {
-        if (!cd_map_uint(req, req_len, 0x08, &v)) { // pinUvAuthParam
-            ctap2_respond(cid, CTAP2_ERR_PIN_REQUIRED, NULL, 0); return;
-        }
+    cbor_dec_t pin_auth_v;
+    bool has_pin_auth = cd_map_uint(req, req_len, 0x08, &pin_auth_v);
+
+    if (has_pin_auth) {
         if (!s_pin_token_valid) {
             ctap2_respond(cid, CTAP2_ERR_PIN_REQUIRED, NULL, 0); return;
         }
         size_t auth_len;
-        const uint8_t *auth_param = cd_bstr(&v, &auth_len);
+        const uint8_t *auth_param = cd_bstr(&pin_auth_v, &auth_len);
         if (!auth_param || auth_len < 16) {
             ctap2_respond(cid, CTAP2_ERR_PIN_AUTH_INVALID, NULL, 0); return;
         }
@@ -624,10 +614,10 @@ static void cmd_make_credential(uint32_t cid, const uint8_t *req, size_t req_len
         }
         uv_flag = true;
     } else if (opt_uv) {
-        // UV requested but not configured
         if (!storage_fido2_has_pin()) {
             ctap2_respond(cid, CTAP2_ERR_PIN_NOT_SET, NULL, 0); return;
         }
+        ctap2_respond(cid, CTAP2_ERR_PIN_REQUIRED, NULL, 0); return;
     }
 
     // Resident key storage check
@@ -771,9 +761,6 @@ static void cmd_make_credential(uint32_t cid, const uint8_t *req, size_t req_len
 // ── CTAP2 command: getAssertion ───────────────────────────────────────────────
 
 static void cmd_get_assertion(uint32_t cid, const uint8_t *req, size_t req_len) {
-    fido2_config_t cfg = {0};
-    storage_get_fido2_config(&cfg);
-
     cbor_dec_t v;
 
     // rpId (key 0x01)
@@ -852,17 +839,26 @@ static void cmd_get_assertion(uint32_t cid, const uint8_t *req, size_t req_len) 
         ctap2_respond(cid, CTAP2_ERR_NO_CREDENTIALS, NULL, 0); return;
     }
 
-    // PIN verification
-    bool uv_flag = false;
-    if (cfg.uv_mode == 1 && storage_fido2_has_pin()) {
-        if (!cd_map_uint(req, req_len, 0x06, &v)) { // pinUvAuthParam
-            ctap2_respond(cid, CTAP2_ERR_PIN_REQUIRED, NULL, 0); return;
+    // options (key 0x05): uv
+    bool opt_uv = false;
+    if (cd_map_uint(req, req_len, 0x05, &v)) {
+        cbor_dec_t ov;
+        if (cd_map_tstr(v.buf, v.len, "uv", &ov)) {
+            cd_item_t bv = cd_item(&ov); opt_uv = (!ov.err && bv.type == 7 && bv.val == 21);
         }
+    }
+
+    // UV via PIN: honour what the relying party requests
+    bool uv_flag = false;
+    cbor_dec_t pin_auth_v;
+    bool has_pin_auth = cd_map_uint(req, req_len, 0x06, &pin_auth_v);
+
+    if (has_pin_auth) {
         if (!s_pin_token_valid) {
             ctap2_respond(cid, CTAP2_ERR_PIN_REQUIRED, NULL, 0); return;
         }
         size_t auth_len;
-        const uint8_t *auth_param = cd_bstr(&v, &auth_len);
+        const uint8_t *auth_param = cd_bstr(&pin_auth_v, &auth_len);
         if (!auth_param || auth_len < 16) {
             ctap2_respond(cid, CTAP2_ERR_PIN_AUTH_INVALID, NULL, 0); return;
         }
@@ -872,6 +868,11 @@ static void cmd_get_assertion(uint32_t cid, const uint8_t *req, size_t req_len) 
             ctap2_respond(cid, CTAP2_ERR_PIN_AUTH_INVALID, NULL, 0); return;
         }
         uv_flag = true;
+    } else if (opt_uv) {
+        if (!storage_fido2_has_pin()) {
+            ctap2_respond(cid, CTAP2_ERR_PIN_NOT_SET, NULL, 0); return;
+        }
+        ctap2_respond(cid, CTAP2_ERR_PIN_REQUIRED, NULL, 0); return;
     }
 
     // Wait for user presence
@@ -1224,6 +1225,10 @@ static void ctaphid_dispatch(uint32_t cid, uint8_t cmd,
         return;
     }
 
+    if (cmd == CTAPHID_CANCEL) {
+        return; // no response; UP timeout handles pending operations
+    }
+
     if (cmd == CTAPHID_PING) {
         ctaphid_send_packet(cid, CTAPHID_PING, data, len);
         return;
@@ -1385,7 +1390,7 @@ esp_err_t fido2_factory_reset(void)
 
     // Reset config
     fido2_config_t cfg = {0};
-    storage_get_fido2_config(&cfg); // keep enabled/uv_mode/confirm key
+    storage_get_fido2_config(&cfg); // keep enabled/confirm key
     cfg.pin_retries = PIN_RETRIES_MAX;
     cfg.rk_count    = 0;
     storage_set_fido2_config(&cfg);
