@@ -359,12 +359,22 @@ static bool ecdsa_sign(const uint8_t priv[32], const uint8_t hash[32],
     return ok;
 }
 
-// Write COSE P-256 public key to CBOR encoder
+// Write COSE P-256 public key for ECDSA (alg: ES256 = -7); used in credential responses
 static void ce_cose_key(cbor_enc_t *e, const uint8_t x[32], const uint8_t y[32]) {
     ce_map(e, 5);
     ce_uint(e, 1);  ce_uint(e, 2);   // kty: EC2
-    ce_uint(e, 3);  ce_nint(e, -7);  // alg: ES256
+    ce_uint(e, 3);  ce_nint(e, -7);  // alg: ES256 (signing)
     ce_nint(e, -1); ce_uint(e, 1);   // crv: P-256
+    ce_nint(e, -2); ce_bstr(e, x, 32); // x
+    ce_nint(e, -3); ce_bstr(e, y, 32); // y
+}
+
+// Write COSE P-256 key for PIN key agreement (alg: ECDH-ES+HKDF-256 = -25); CTAP2 spec §6.5.4
+static void ce_cose_ecdh_key(cbor_enc_t *e, const uint8_t x[32], const uint8_t y[32]) {
+    ce_map(e, 5);
+    ce_uint(e, 1);  ce_uint(e, 2);    // kty: EC2
+    ce_uint(e, 3);  ce_nint(e, -25);  // alg: ECDH-ES+HKDF-256
+    ce_nint(e, -1); ce_uint(e, 1);    // crv: P-256
     ce_nint(e, -2); ce_bstr(e, x, 32); // x
     ce_nint(e, -3); ce_bstr(e, y, 32); // y
 }
@@ -933,6 +943,7 @@ static void cmd_client_pin(uint32_t cid, const uint8_t *req, size_t req_len) {
         ctap2_respond(cid, CTAP2_ERR_INVALID_CBOR, NULL, 0); return;
     }
     uint8_t subcmd = (uint8_t)subcmd_item.val;
+    ESP_LOGI(TAG, "clientPIN subcmd=0x%02x", subcmd);
 
     fido2_config_t cfg = {0};
     storage_get_fido2_config(&cfg);
@@ -974,7 +985,7 @@ static void cmd_client_pin(uint32_t cid, const uint8_t *req, size_t req_len) {
         uint8_t buf[128]; cbor_enc_t e; ce_init(&e, buf, sizeof(buf));
         ce_map(&e, 1);
         ce_uint(&e, 1);
-        ce_cose_key(&e, x, y);
+        ce_cose_ecdh_key(&e, x, y);
         ctap2_respond(cid, CTAP2_OK, buf, e.pos);
         return;
     }
@@ -1252,6 +1263,7 @@ static void ctaphid_dispatch(uint32_t cid, uint8_t cmd,
         uint8_t ctap_cmd = data[0];
         const uint8_t *cbor = data + 1;
         size_t cbor_len = len - 1;
+        ESP_LOGI(TAG, "CBOR cmd=0x%02x len=%u", ctap_cmd, (unsigned)cbor_len);
 
         switch (ctap_cmd) {
         case CTAP2_CMD_GET_INFO:
