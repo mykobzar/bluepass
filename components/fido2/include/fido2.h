@@ -27,3 +27,7 @@ esp_err_t fido2_regen_master_key(void);
 
 // Full factory reset: clear all RKs, PIN, sign counter, regenerate master key
 esp_err_t fido2_factory_reset(void);
+
+// Diagnostic log: copy current log into buf (null-terminated); clear on request
+void fido2_diag_get(char *buf, size_t maxlen);
+void fido2_diag_clear(void);
