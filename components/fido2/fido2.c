@@ -3,6 +3,7 @@
 #include "wifi_manager.h"
 #include "esp_log.h"
 #include "esp_random.h"
+#include "esp_attr.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/queue.h"
@@ -107,6 +108,23 @@ static bool     s_pin_token_valid;
 
 // Send callback registered by usb_hid_device
 static void (*s_tx_cb)(const uint8_t *buf);
+
+// ── RTC crash log (survives software reset; shows last steps before a crash) ─
+
+#define CRASH_MAGIC 0xC0FFEE42u
+RTC_NOINIT_ATTR static char     s_crash_buf[128];
+RTC_NOINIT_ATTR static uint8_t  s_crash_len;
+RTC_NOINIT_ATTR static uint32_t s_crash_magic;
+
+static void crash_mark(const char *s) {
+    if (s_crash_magic != CRASH_MAGIC) return;
+    uint8_t n = (uint8_t)strlen(s);
+    if ((uint32_t)s_crash_len + n < sizeof(s_crash_buf) - 1u) {
+        memcpy(s_crash_buf + s_crash_len, s, n);
+        s_crash_len += n;
+        s_crash_buf[s_crash_len] = '\0';
+    }
+}
 
 // ── Diagnostic log (read via GET /api/passkey/diag) ──────────────────────────
 
@@ -1131,6 +1149,7 @@ static void cmd_client_pin(uint32_t cid, const uint8_t *req, size_t req_len) {
     }
 
     if (subcmd == CTAP2_SUBCMD_SET_PIN || subcmd == CTAP2_SUBCMD_CHANGE_PIN) {
+        crash_mark("sP:0\n");
         if (subcmd == CTAP2_SUBCMD_SET_PIN && storage_fido2_has_pin()) {
             ctap2_respond(cid, CTAP2_ERR_NOT_ALLOWED, NULL, 0); goto done_pin;
         }
@@ -1140,30 +1159,36 @@ static void cmd_client_pin(uint32_t cid, const uint8_t *req, size_t req_len) {
             ctap2_respond(cid, CTAP2_ERR_MISSING_PARAMETER, NULL, 0); goto done_pin;
         }
         size_t npe_len; const uint8_t *npe = cd_bstr(&v, &npe_len);
-        if (!npe || npe_len < 64 || npe_len > 256) {
+        if (!npe || npe_len < 64 || npe_len > 256 || npe_len % 16 != 0) {
             ctap2_respond(cid, CTAP2_ERR_INVALID_CBOR, NULL, 0); goto done_pin;
         }
+        crash_mark("sP:1\n");
 
         // For changePIN: verify old PIN via pinHashEnc (key 0x06)
         const uint8_t *phe_for_hmac = NULL;
         size_t phe_hmac_len = 0;
         if (subcmd == CTAP2_SUBCMD_CHANGE_PIN) {
+            crash_mark("cP:0\n");
             if (cfg.pin_retries == 0) { ctap2_respond(cid, CTAP2_ERR_PIN_BLOCKED, NULL, 0); goto done_pin; }
             if (!cd_map_uint(req, req_len, 0x06, &v)) {
                 ctap2_respond(cid, CTAP2_ERR_MISSING_PARAMETER, NULL, 0); goto done_pin;
             }
             const uint8_t *phe = cd_bstr(&v, &phe_hmac_len);
-            if (!phe || phe_hmac_len < 16) { ctap2_respond(cid, CTAP2_ERR_INVALID_CBOR, NULL, 0); goto done_pin; }
+            if (!phe || phe_hmac_len != 16) { ctap2_respond(cid, CTAP2_ERR_INVALID_CBOR, NULL, 0); goto done_pin; }
+            crash_mark("cP:1\n");
             uint8_t dec_hash[16] = {0};
             aes_cbc_decrypt(shared_secret, phe, 16, dec_hash);
+            crash_mark("cP:2\n");
             uint8_t stored_hash[16] = {0};
             storage_get_fido2_pin_hash(stored_hash);
+            crash_mark("cP:3\n");
             if (memcmp(dec_hash, stored_hash, 16) != 0) {
                 cfg.pin_retries--;
                 storage_set_fido2_config(&cfg);
                 ctap2_respond(cid, cfg.pin_retries == 0 ? CTAP2_ERR_PIN_BLOCKED : CTAP2_ERR_PIN_INVALID, NULL, 0);
                 goto done_pin;
             }
+            crash_mark("cP:4\n");
             cfg.pin_retries = PIN_RETRIES_MAX;
             phe_for_hmac = phe; // valid for HMAC — points into s_hid.buf which lives for this call
         }
@@ -1176,11 +1201,17 @@ static void cmd_client_pin(uint32_t cid, const uint8_t *req, size_t req_len) {
         if (!pap || pap_len < 16) {
             ctap2_respond(cid, CTAP2_ERR_PIN_AUTH_INVALID, NULL, 0); goto done_pin;
         }
+        crash_mark("sP:2\n");
         uint8_t expected_hmac[32];
         if (phe_for_hmac) {
             // changePIN: HMAC over newPinEnc || pinHashEnc
-            mbedtls_md_context_t md; mbedtls_md_init(&md);
-            mbedtls_md_setup(&md, mbedtls_md_info_from_type(MBEDTLS_MD_SHA256), 1);
+            mbedtls_md_context_t md;
+            mbedtls_md_init(&md);
+            int rc = mbedtls_md_setup(&md, mbedtls_md_info_from_type(MBEDTLS_MD_SHA256), 1);
+            if (rc != 0) {
+                mbedtls_md_free(&md);
+                ctap2_respond(cid, CTAP2_ERR_OPERATION_DENIED, NULL, 0); goto done_pin;
+            }
             mbedtls_md_hmac_starts(&md, shared_secret, 32);
             mbedtls_md_hmac_update(&md, npe, npe_len);
             mbedtls_md_hmac_update(&md, phe_for_hmac, phe_hmac_len);
@@ -1192,6 +1223,7 @@ static void cmd_client_pin(uint32_t cid, const uint8_t *req, size_t req_len) {
         if (memcmp(expected_hmac, pap, 16) != 0) {
             ctap2_respond(cid, CTAP2_ERR_PIN_AUTH_INVALID, NULL, 0); goto done_pin;
         }
+        crash_mark("sP:3\n");
 
         // Decrypt new PIN
         uint8_t *pin_plain = malloc(npe_len);
@@ -1202,17 +1234,19 @@ static void cmd_client_pin(uint32_t cid, const uint8_t *req, size_t req_len) {
             free(pin_plain);
             ctap2_respond(cid, CTAP2_ERR_PIN_POLICY_VIOLATION, NULL, 0); goto done_pin;
         }
+        crash_mark("sP:4\n");
 
-        // Store pinHash = SHA256(SHA256(pin))[0:16]
-        uint8_t h1[32], h2[32];
+        // Store pinHash = LEFT(SHA-256(pin), 16) per CTAP2 §6.5.4
+        uint8_t h1[32];
         sha256(pin_plain, pin_len, h1);
-        sha256(h1, 32, h2);
         free(pin_plain);
-        storage_set_fido2_pin_hash(h2);
+        storage_set_fido2_pin_hash(h1);
+        crash_mark("sP:5\n");
         cfg.pin_retries = PIN_RETRIES_MAX;
         storage_set_fido2_config(&cfg);
         s_pin_token_valid = false;
         ctap2_respond(cid, CTAP2_OK, NULL, 0);
+        crash_mark("sP:done\n");
         goto done_pin;
     }
 
@@ -1536,6 +1570,14 @@ esp_err_t fido2_init(void)
     s_up_sem   = xSemaphoreCreateBinary();
     if (!s_rx_queue || !s_up_sem) return ESP_ERR_NO_MEM;
 
+    // Recover crash log from RTC memory if this is a software-reset recovery
+    if (s_crash_magic == CRASH_MAGIC && s_crash_len > 0) {
+        diag_append("[CRASH] last steps: %.*s\n", (int)s_crash_len, s_crash_buf);
+    }
+    s_crash_magic = CRASH_MAGIC;
+    s_crash_buf[0] = '\0';
+    s_crash_len = 0;
+
     mbedtls_ecp_group_init(&s_pin_grp);
     mbedtls_mpi_init(&s_pin_d);
     mbedtls_ecp_point_init(&s_pin_Q);
@@ -1557,7 +1599,7 @@ esp_err_t fido2_init(void)
     }
     memset(mkey, 0, 32);
 
-    xTaskCreate(fido2_task, "fido2", 8192, NULL, 4, NULL);
+    xTaskCreate(fido2_task, "fido2", 12288, NULL, 4, NULL);
     ESP_LOGI(TAG, "init (enabled=%d)", cfg.enabled);
     return ESP_OK;
 }
