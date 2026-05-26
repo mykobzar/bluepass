@@ -27,8 +27,6 @@
 #define LED_JIG_ON_US  (200 * 1000)   // 200 ms flash                (jiggler on-phase)
 #define LED_JIG_OFF_US (2800 * 1000)  // 2.8 s dark                  (jiggler off-phase, 3 s cycle)
 #define LED_PULSE_US   (150 * 1000)   // 150 ms one-shot pulse        (substitution)
-#define LED_FIDO_ON_US (200 * 1000)   // 200 ms on                   (FIDO2 UP pending - amber)
-#define LED_FIDO_OFF_US (300 * 1000)  // 300 ms off                  (FIDO2 UP pending - 2 Hz)
 
 // Full-scale RGB colours scaled by brightness at runtime
 #define RED_R_F    255
@@ -123,9 +121,10 @@ static void led_set(uint8_t r, uint8_t g, uint8_t b)
 //
 // Priority (highest first):
 //   1. Web UI active       → solid blue
-//   2. WiFi not connected  → red fast blink (100 ms)
-//   3. Jiggler active      → green slow blink (500 ms)
-//   4. Connected idle      → off
+//   2. FIDO2 UP pending    → solid orange
+//   3. WiFi not connected  → red fast blink (5 Hz)
+//   4. Jiggler active      → green slow blink (~0.35 Hz)
+//   5. Connected idle      → off
 
 static void led_apply(void)
 {
@@ -140,10 +139,8 @@ static void led_apply(void)
     }
 
     if (s_fido2_pending) {
-        s_blink_r = AMBER_R; s_blink_g = AMBER_G; s_blink_b = AMBER_B;
-        s_led_on = true;
         led_set(AMBER_R, AMBER_G, AMBER_B);
-        esp_timer_start_once(s_led_timer, LED_FIDO_ON_US);
+        s_led_on = true;
         return;
     }
 
@@ -181,9 +178,7 @@ static void led_blink_cb(void *arg)
             s_led_on ? s_blink_b : 0);
 
     // Restart one-shot for next toggle (periodic timer replaced by self-rescheduling one-shot)
-    if (s_fido2_pending && !s_web_ui_active) {
-        esp_timer_start_once(s_led_timer, s_led_on ? LED_FIDO_ON_US : LED_FIDO_OFF_US);
-    } else if (s_jiggler_active && s_state == WIFI_MGR_STATE_CONNECTED) {
+    if (s_jiggler_active && s_state == WIFI_MGR_STATE_CONNECTED) {
         esp_timer_start_once(s_led_timer, s_led_on ? LED_JIG_ON_US : LED_JIG_OFF_US);
     } else if (s_state != WIFI_MGR_STATE_CONNECTED) {
         esp_timer_start_once(s_led_timer, LED_FAST_US);

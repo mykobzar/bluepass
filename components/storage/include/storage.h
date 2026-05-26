@@ -170,7 +170,7 @@ esp_err_t storage_delete_mqtt_in_slot(uint8_t idx);
 
 typedef struct {
     bool    enabled;
-    uint8_t uv_mode;            // 0 = UP-only, 1 = UP+UV (PIN required for UV)
+    uint8_t _reserved_uv_mode; // deprecated — no longer used; kept for NVS layout compatibility
     uint8_t pin_retries;        // remaining retries (max 8), 0 = blocked
     uint8_t confirm_modifiers;  // hotkey to confirm user presence
     uint8_t confirm_keycode;
