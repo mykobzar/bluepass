@@ -41,6 +41,7 @@
 #define CTAP2_CMD_RESET              0x07
 #define CTAP2_CMD_GET_NEXT_ASSERTION 0x08
 
+#define CTAP1_ERR_INVALID_COMMAND    0x01
 #define CTAP2_OK                     0x00
 #define CTAP2_ERR_INVALID_CBOR       0x12
 #define CTAP2_ERR_MISSING_PARAMETER  0x14
@@ -439,7 +440,7 @@ static void cmd_get_info(uint32_t cid) {
     ce_map(&e, 5);
     ce_tstr(&e, "rk");        ce_bool(&e, true);
     ce_tstr(&e, "up");        ce_bool(&e, true);
-    ce_tstr(&e, "uv");        ce_bool(&e, pin_set);
+    ce_tstr(&e, "uv");        ce_bool(&e, false);    // no biometric UV; PIN uses clientPin
     ce_tstr(&e, "plat");      ce_bool(&e, false);
     ce_tstr(&e, "clientPin"); ce_bool(&e, pin_set);
 
@@ -1256,7 +1257,7 @@ static void ctaphid_dispatch(uint32_t cid, uint8_t cmd,
             cmd_reset(cid);
             break;
         default:
-            ctap2_respond(cid, CTAP2_ERR_INVALID_CBOR, NULL, 0);
+            ctap2_respond(cid, CTAP1_ERR_INVALID_COMMAND, NULL, 0);
             break;
         }
         return;
