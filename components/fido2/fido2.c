@@ -1146,6 +1146,7 @@ static void cmd_client_pin(uint32_t cid, const uint8_t *req, size_t req_len) {
     uint8_t shared_secret[32] = {0};
     bool ecdh_ok = false;
 
+    crash_mark("ecdh:0\n");
     if (mbedtls_ecp_point_read_binary(&s_pin_grp, &peer_Q, peer_buf, 65) == 0 &&
         mbedtls_ecdh_compute_shared(&s_pin_grp, &shared, &peer_Q, &s_pin_d, rng_func, NULL) == 0) {
         uint8_t shared_bytes[32] = {0};
@@ -1153,6 +1154,7 @@ static void cmd_client_pin(uint32_t cid, const uint8_t *req, size_t req_len) {
         sha256(shared_bytes, 32, shared_secret);
         ecdh_ok = true;
     }
+    crash_mark("ecdh:1\n");
     mbedtls_ecp_point_free(&peer_Q);
     mbedtls_mpi_free(&shared);
 
