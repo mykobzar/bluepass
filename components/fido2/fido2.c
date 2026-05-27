@@ -127,11 +127,14 @@ static void crash_mark(const char *s) {
 }
 
 // ── Diagnostic log (read via GET /api/passkey/diag) ──────────────────────────
+// diag_append is called from both fido2_task and the TinyUSB task (via
+// fido2_on_hid_rx), so all buffer access must be guarded by a spinlock.
 
 #define DIAG_SIZE 1024
-static char     s_diag_buf[DIAG_SIZE];
-static size_t   s_diag_len = 0;
-static uint32_t s_diag_seq = 0;
+static char          s_diag_buf[DIAG_SIZE];
+static size_t        s_diag_len = 0;
+static uint32_t      s_diag_seq = 0;
+static portMUX_TYPE  s_diag_mux = portMUX_INITIALIZER_UNLOCKED;
 
 static void diag_append(const char *fmt, ...) {
     char tmp[160];
@@ -140,6 +143,7 @@ static void diag_append(const char *fmt, ...) {
     int n = vsnprintf(tmp, sizeof(tmp), fmt, ap);
     va_end(ap);
     if (n <= 0) return;
+    taskENTER_CRITICAL(&s_diag_mux);
     if (s_diag_len + (size_t)n >= DIAG_SIZE) {
         // Drop oldest line to make room
         char *nl = memchr(s_diag_buf, '\n', s_diag_len);
@@ -154,6 +158,7 @@ static void diag_append(const char *fmt, ...) {
     memcpy(s_diag_buf + s_diag_len, tmp, (size_t)n);
     s_diag_len += (size_t)n;
     s_diag_buf[s_diag_len] = '\0';
+    taskEXIT_CRITICAL(&s_diag_mux);
 }
 
 static const char *ctap_status_name(uint8_t s) {
@@ -181,15 +186,19 @@ static const char *ctap_status_name(uint8_t s) {
 static const char *s_diag_cmd = "";  // set before each cmd_* call
 
 void fido2_diag_get(char *buf, size_t maxlen) {
+    taskENTER_CRITICAL(&s_diag_mux);
     size_t n = s_diag_len < maxlen - 1 ? s_diag_len : maxlen - 1;
     memcpy(buf, s_diag_buf, n);
     buf[n] = '\0';
+    taskEXIT_CRITICAL(&s_diag_mux);
 }
 
 void fido2_diag_clear(void) {
+    taskENTER_CRITICAL(&s_diag_mux);
     s_diag_len = 0;
     s_diag_buf[0] = '\0';
     s_diag_seq = 0;
+    taskEXIT_CRITICAL(&s_diag_mux);
 }
 
 // ── CBOR encoder ─────────────────────────────────────────────────────────────
