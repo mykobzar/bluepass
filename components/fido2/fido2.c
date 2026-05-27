@@ -1414,6 +1414,7 @@ static void ctaphid_dispatch(uint32_t cid, uint8_t cmd,
         case CTAP2_CMD_CLIENT_PIN:
             s_diag_cmd = "clientPIN";  // refined inside cmd_client_pin
             cmd_client_pin(cid, cbor, cbor_len);
+            crash_mark("disp:ret\n");
             break;
         case CTAP2_CMD_RESET:
             s_diag_cmd = "reset";
@@ -1460,6 +1461,7 @@ static void ctaphid_process_packet(const uint8_t *pkt) {
 
         if (s_hid.recv_len >= s_hid.total_len) {
             ctaphid_dispatch(cid, cmd, s_hid.buf, s_hid.total_len);
+            crash_mark("proc:ret\n");
             s_hid.active = false;
         }
     } else {
@@ -1481,6 +1483,7 @@ static void ctaphid_process_packet(const uint8_t *pkt) {
 
         if (s_hid.recv_len >= s_hid.total_len) {
             ctaphid_dispatch(cid, s_hid.cmd, s_hid.buf, s_hid.total_len);
+            crash_mark("proc:ret\n");
             s_hid.active = false;
         }
     }
@@ -1492,8 +1495,12 @@ static void fido2_task(void *arg)
 {
     uint8_t pkt[64];
     while (1) {
-        if (xQueueReceive(s_rx_queue, pkt, portMAX_DELAY) == pdTRUE)
+        if (xQueueReceive(s_rx_queue, pkt, portMAX_DELAY) == pdTRUE) {
             ctaphid_process_packet(pkt);
+            crash_mark("task:done\n");
+            UBaseType_t hwm = uxTaskGetStackHighWaterMark(NULL);
+            diag_append("stack_hwm=%u\n", (unsigned)hwm);
+        }
     }
 }
 
@@ -1608,7 +1615,7 @@ esp_err_t fido2_init(void)
     }
     memset(mkey, 0, 32);
 
-    xTaskCreate(fido2_task, "fido2", 12288, NULL, 4, NULL);
+    xTaskCreate(fido2_task, "fido2", 16384, NULL, 4, NULL);
     ESP_LOGI(TAG, "init (enabled=%d)", cfg.enabled);
     return ESP_OK;
 }
