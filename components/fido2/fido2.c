@@ -112,13 +112,13 @@ static void (*s_tx_cb)(const uint8_t *buf);
 // ── RTC crash log (survives software reset; shows last steps before a crash) ─
 
 #define CRASH_MAGIC 0xC0FFEE42u
-RTC_NOINIT_ATTR static char     s_crash_buf[128];
-RTC_NOINIT_ATTR static uint8_t  s_crash_len;
+RTC_NOINIT_ATTR static char     s_crash_buf[512];
+RTC_NOINIT_ATTR static uint16_t s_crash_len;
 RTC_NOINIT_ATTR static uint32_t s_crash_magic;
 
 static void crash_mark(const char *s) {
     if (s_crash_magic != CRASH_MAGIC) return;
-    uint8_t n = (uint8_t)strlen(s);
+    uint16_t n = (uint16_t)strlen(s);
     if ((uint32_t)s_crash_len + n < sizeof(s_crash_buf) - 1u) {
         memcpy(s_crash_buf + s_crash_len, s, n);
         s_crash_len += n;
@@ -1500,6 +1500,9 @@ static void fido2_task(void *arg)
             crash_mark("task:done\n");
             UBaseType_t hwm = uxTaskGetStackHighWaterMark(NULL);
             diag_append("stack_hwm=%u\n", (unsigned)hwm);
+            char hwm_str[10];
+            snprintf(hwm_str, sizeof(hwm_str), "h%u\n", (unsigned)hwm);
+            crash_mark(hwm_str);
         }
     }
 }
