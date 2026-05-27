@@ -1068,6 +1068,7 @@ static void cmd_client_pin(uint32_t cid, const uint8_t *req, size_t req_len) {
 
     if (subcmd == CTAP2_SUBCMD_GET_KEY_AGREE) {
         // Generate fresh ECDH keypair for PIN protocol session
+        crash_mark("gKA:0\n");
         if (s_pin_key_valid) {
             mbedtls_mpi_free(&s_pin_d);
             mbedtls_ecp_point_free(&s_pin_Q);
@@ -1082,6 +1083,7 @@ static void cmd_client_pin(uint32_t cid, const uint8_t *req, size_t req_len) {
             mbedtls_ecp_gen_keypair(&s_pin_grp, &s_pin_d, &s_pin_Q, rng_func, NULL) != 0) {
             ctap2_respond(cid, CTAP2_ERR_OPERATION_DENIED, NULL, 0); return;
         }
+        crash_mark("gKA:1\n");
         s_pin_key_valid = true;
 
         uint8_t pt[65]; size_t pt_len = 0;
@@ -1095,6 +1097,7 @@ static void cmd_client_pin(uint32_t cid, const uint8_t *req, size_t req_len) {
         ce_uint(&e, 1);
         ce_cose_ecdh_key(&e, x, y);
         ctap2_respond(cid, CTAP2_OK, buf, e.pos);
+        crash_mark("gKA:2\n");
         return;
     }
 
@@ -1499,10 +1502,10 @@ static void fido2_task(void *arg)
             ctaphid_process_packet(pkt);
             crash_mark("task:done\n");
             UBaseType_t hwm = uxTaskGetStackHighWaterMark(NULL);
-            diag_append("stack_hwm=%u\n", (unsigned)hwm);
             char hwm_str[10];
             snprintf(hwm_str, sizeof(hwm_str), "h%u\n", (unsigned)hwm);
             crash_mark(hwm_str);
+            diag_append("stack_hwm=%u\n", (unsigned)hwm);
         }
     }
 }
@@ -1618,7 +1621,7 @@ esp_err_t fido2_init(void)
     }
     memset(mkey, 0, 32);
 
-    xTaskCreate(fido2_task, "fido2", 16384, NULL, 4, NULL);
+    xTaskCreate(fido2_task, "fido2", 32768, NULL, 4, NULL);
     ESP_LOGI(TAG, "init (enabled=%d)", cfg.enabled);
     return ESP_OK;
 }
