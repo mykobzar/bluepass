@@ -1405,6 +1405,7 @@ static void ctaphid_dispatch(uint32_t cid, uint8_t cmd,
         size_t cbor_len = len - 1;
 
         diag_append("  CBOR ctap=0x%02X cbor_len=%u\n", ctap_cmd, (unsigned)cbor_len);
+        { char _cm[10]; snprintf(_cm, sizeof(_cm), "cmd:%02X\n", ctap_cmd); crash_mark(_cm); }
         switch (ctap_cmd) {
         case CTAP2_CMD_GET_INFO:
             s_diag_cmd = "getInfo";
@@ -1627,7 +1628,7 @@ esp_err_t fido2_init(void)
     }
     memset(mkey, 0, 32);
 
-    xTaskCreate(fido2_task, "fido2", 32768, NULL, 4, NULL);
+    xTaskCreate(fido2_task, "fido2", 65536, NULL, 4, NULL);
     ESP_LOGI(TAG, "init (enabled=%d)", cfg.enabled);
     return ESP_OK;
 }
