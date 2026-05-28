@@ -10,6 +10,7 @@ After flashing, use **Settings → Board** to configure the correct GPIO pins fo
 
 | Version | Date | Notes |
 |---|---|---|
+| **2.0.18-beta** | 2026-05-28 | FIDO2: verbose logging behind CONFIG_FIDO2_DEBUG_LOG (off by default); keeps only command results and errors in production |
 | **2.0.17-beta** | 2026-05-28 | FIDO2: fix diag_append buffer overflow — single `if` drop left `s_diag_len` past buffer end; subsequent writes to corrupted offset trashed task stack canary |
 | **2.0.16-beta** | 2026-05-28 | FIDO2: stack 32→64 KB — ecdsa_sign overflows 32 KB during makeCredential/getAssertion; add cmd:XX crash marker to identify CTAP command |
 | **2.0.15-beta** | 2026-05-28 | FIDO2: add pin:0/pin:v/hwm:0/hwm:1 crash markers — ecdh:0 absent in v2.0.14 log means crash is before ECDH or in uxTaskGetStackHighWaterMark itself |
@@ -46,7 +47,7 @@ After flashing, use **Settings → Board** to configure the correct GPIO pins fo
 
 ---
 
-## Files — v2.0.17-beta
+## Files — v2.0.18-beta
 
 Two variants are available.  Use the **standard** variant for a normal install.  Use the **encrypted** variant if you want hardware-level AES-XTS flash encryption.
 
@@ -54,19 +55,19 @@ Two variants are available.  Use the **standard** variant for a normal install. 
 
 | File | Flash address | Description |
 |---|---|---|
-| `bootloader-2.0.17-beta.bin` | `0x0` | Second-stage bootloader |
-| `partition-table-2.0.17-beta.bin` | `0x8000` | Partition layout (NVS + dual OTA slots) |
-| `ota_data_initial-2.0.17-beta.bin` | `0x10000` | OTA slot selector (initial state) |
-| `bluepass-2.0.17-beta.bin` | `0x20000` | Main application |
+| `bootloader-2.0.18-beta.bin` | `0x0` | Second-stage bootloader |
+| `partition-table-2.0.18-beta.bin` | `0x8000` | Partition layout (NVS + dual OTA slots) |
+| `ota_data_initial-2.0.18-beta.bin` | `0x10000` | OTA slot selector (initial state) |
+| `bluepass-2.0.18-beta.bin` | `0x20000` | Main application |
 
 ### With flash encryption (recommended)
 
 | File | Flash address | Description |
 |---|---|---|
-| `bootloader-2.0.17-beta-enc.bin` | `0x0` | Bootloader with encryption support |
-| `partition-table-2.0.17-beta-enc.bin` | `0x8000` | Partition layout |
-| `ota_data_initial-2.0.17-beta-enc.bin` | `0x10000` | OTA slot selector |
-| `bluepass-2.0.17-beta-enc.bin` | `0x20000` | Main application (encryption-enabled build) |
+| `bootloader-2.0.18-beta-enc.bin` | `0x0` | Bootloader with encryption support |
+| `partition-table-2.0.18-beta-enc.bin` | `0x8000` | Partition layout |
+| `ota_data_initial-2.0.18-beta-enc.bin` | `0x10000` | OTA slot selector |
+| `bluepass-2.0.18-beta-enc.bin` | `0x20000` | Main application (encryption-enabled build) |
 
 > **Note:** v2.x is a beta branch — FIDO2/Passkey support is in active development.  For stable production use, see v1.1.2 below.
 
