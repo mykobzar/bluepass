@@ -142,17 +142,17 @@ static void diag_append(const char *fmt, ...) {
     va_start(ap, fmt);
     int n = vsnprintf(tmp, sizeof(tmp), fmt, ap);
     va_end(ap);
-    if (n <= 0) return;
+    if (n <= 0 || (size_t)n >= DIAG_SIZE) return;
     taskENTER_CRITICAL(&s_diag_mux);
-    if (s_diag_len + (size_t)n >= DIAG_SIZE) {
-        // Drop oldest line to make room
+    while (s_diag_len + (size_t)n >= DIAG_SIZE) {
         char *nl = memchr(s_diag_buf, '\n', s_diag_len);
         if (nl) {
             size_t skip = (size_t)(nl - s_diag_buf) + 1;
             memmove(s_diag_buf, s_diag_buf + skip, s_diag_len - skip);
             s_diag_len -= skip;
         } else {
-            s_diag_len = 0; // no newline found, clear entirely
+            s_diag_len = 0;
+            break;
         }
     }
     memcpy(s_diag_buf + s_diag_len, tmp, (size_t)n);
