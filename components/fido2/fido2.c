@@ -1031,6 +1031,7 @@ static void cmd_get_assertion(uint32_t cid, const uint8_t *req, size_t req_len) 
 // ── CTAP2 command: clientPIN ──────────────────────────────────────────────────
 
 static void cmd_client_pin(uint32_t cid, const uint8_t *req, size_t req_len) {
+    crash_mark("pin:0\n");
     cbor_dec_t v;
 
     // subCommand (key 0x02)
@@ -1105,6 +1106,7 @@ static void cmd_client_pin(uint32_t cid, const uint8_t *req, size_t req_len) {
     if (!s_pin_key_valid) {
         ctap2_respond(cid, CTAP2_ERR_PIN_AUTH_INVALID, NULL, 0); return;
     }
+    crash_mark("pin:v\n");
 
     // keyAgreement (key 0x03): client public key in COSE format
     if (!cd_map_uint(req, req_len, 0x03, &v)) {
@@ -1503,7 +1505,9 @@ static void fido2_task(void *arg)
         if (xQueueReceive(s_rx_queue, pkt, portMAX_DELAY) == pdTRUE) {
             ctaphid_process_packet(pkt);
             crash_mark("task:done\n");
+            crash_mark("hwm:0\n");
             UBaseType_t hwm = uxTaskGetStackHighWaterMark(NULL);
+            crash_mark("hwm:1\n");
             char hwm_str[10];
             snprintf(hwm_str, sizeof(hwm_str), "h%u\n", (unsigned)hwm);
             crash_mark(hwm_str);
