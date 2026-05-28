@@ -1,0 +1,14 @@
+menu "FIDO2 / Passkey authenticator"
+
+    config FIDO2_DEBUG_LOG
+        bool "Enable verbose FIDO2 diagnostic logging"
+        default n
+        help
+            Log every HID packet receive event, CTAPHID dispatch header, CBOR
+            command code, and per-packet stack HWM to the in-memory diagnostic
+            buffer (readable from the Passkey tab in the web UI).
+
+            When disabled only command results (#N cmd → STATUS) and errors are
+            logged, which is sufficient for normal production use.
+
+endmenu

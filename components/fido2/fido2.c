@@ -1351,8 +1351,10 @@ static void ctaphid_dispatch(uint32_t cid, uint8_t cmd,
     fido2_config_t cfg = {0};
     storage_get_fido2_config(&cfg);
 
+#if CONFIG_FIDO2_DEBUG_LOG
     diag_append("HID cmd=0x%02X cid=%08lX len=%u\n",
                 cmd, (unsigned long)cid, (unsigned)len);
+#endif
 
     if (cmd == CTAPHID_INIT) {
         // Handle INIT regardless of enabled state
@@ -1379,8 +1381,10 @@ static void ctaphid_dispatch(uint32_t cid, uint8_t cmd,
         // new_cid is carried in the response payload (bytes 8-11), not in the packet header
         uint32_t resp_cid = (cid == CTAPHID_CID_BROADCAST) ? CTAPHID_CID_BROADCAST : new_cid;
         ctaphid_send_packet(resp_cid, CTAPHID_INIT, resp, 17);
+#if CONFIG_FIDO2_DEBUG_LOG
         diag_append("  INIT ok new_cid=%08lX resp_on=%08lX\n",
                     (unsigned long)new_cid, (unsigned long)resp_cid);
+#endif
         return;
     }
 
@@ -1404,7 +1408,9 @@ static void ctaphid_dispatch(uint32_t cid, uint8_t cmd,
         const uint8_t *cbor = data + 1;
         size_t cbor_len = len - 1;
 
+#if CONFIG_FIDO2_DEBUG_LOG
         diag_append("  CBOR ctap=0x%02X cbor_len=%u\n", ctap_cmd, (unsigned)cbor_len);
+#endif
         { char _cm[10]; snprintf(_cm, sizeof(_cm), "cmd:%02X\n", ctap_cmd); crash_mark(_cm); }
         switch (ctap_cmd) {
         case CTAP2_CMD_GET_INFO:
@@ -1505,6 +1511,7 @@ static void fido2_task(void *arg)
     while (1) {
         if (xQueueReceive(s_rx_queue, pkt, portMAX_DELAY) == pdTRUE) {
             ctaphid_process_packet(pkt);
+#if CONFIG_FIDO2_DEBUG_LOG
             crash_mark("task:done\n");
             crash_mark("hwm:0\n");
             UBaseType_t hwm = uxTaskGetStackHighWaterMark(NULL);
@@ -1513,6 +1520,7 @@ static void fido2_task(void *arg)
             snprintf(hwm_str, sizeof(hwm_str), "h%u\n", (unsigned)hwm);
             crash_mark(hwm_str);
             diag_append("stack_hwm=%u\n", (unsigned)hwm);
+#endif
         }
     }
 }
@@ -1527,11 +1535,15 @@ void fido2_register_tx(void (*tx_cb)(const uint8_t *buf))
 void fido2_on_hid_rx(const uint8_t *buf)
 {
     if (!s_rx_queue) {
+#if CONFIG_FIDO2_DEBUG_LOG
         diag_append("RX: no queue\n");
+#endif
         return;
     }
+#if CONFIG_FIDO2_DEBUG_LOG
     diag_append("RX %02X%02X%02X%02X cmd=%02X\n",
                 buf[0], buf[1], buf[2], buf[3], buf[4]);
+#endif
     xQueueSend(s_rx_queue, buf, 0);
 }
 
