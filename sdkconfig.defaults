@@ -63,3 +63,6 @@ CONFIG_LOG_MAXIMUM_LEVEL_DEBUG=y
 
 # FIDO2 — verbose per-packet logging off in production; enable for debugging
 # CONFIG_FIDO2_DEBUG_LOG is not set
+
+# BLE — verbose GAP/GATT event logging off in production; enable for debugging
+# CONFIG_BLE_DEBUG_LOG is not set

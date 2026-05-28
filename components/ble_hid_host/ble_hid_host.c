@@ -25,6 +25,7 @@ static size_t s_ble_log_pos;
 static void blog(const char *fmt, ...) __attribute__((format(printf,1,2)));
 static void blog(const char *fmt, ...)
 {
+#if CONFIG_BLE_DEBUG_LOG
     char tmp[128];
     va_list ap;
     va_start(ap, fmt);
@@ -40,6 +41,9 @@ static void blog(const char *fmt, ...)
     s_ble_log[s_ble_log_pos + n]     = '\n';
     s_ble_log[s_ble_log_pos + n + 1] = '\0';
     s_ble_log_pos += n + 1;
+#else
+    (void)fmt;
+#endif
 }
 
 #define HID_SVC_UUID         0x1812

@@ -1,0 +1,15 @@
+menu "BLE HID host"
+
+    config BLE_DEBUG_LOG
+        bool "Enable verbose BLE diagnostic logging"
+        default n
+        help
+            Log all BLE GAP/GATT events, connection state transitions, report
+            descriptor discovery, and CCCD subscription results to the in-memory
+            ring buffer (readable from the BLE log spoiler in the web UI) and to
+            the serial console via ESP_LOGI.
+
+            When disabled blog() is a no-op: no serial output, no ring-buffer
+            writes. The BLE log spoiler in the web UI will be empty.
+
+endmenu
