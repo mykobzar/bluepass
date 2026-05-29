@@ -2355,6 +2355,18 @@ CONFIG_WIFI_PROV_STA_ALL_CHANNEL_SCAN=y
 # end of Wi-Fi Provisioning Manager
 
 #
+# BLE HID host
+#
+# CONFIG_BLE_DEBUG_LOG is not set
+# end of BLE HID host
+
+#
+# FIDO2 / Passkey authenticator
+#
+# CONFIG_FIDO2_DEBUG_LOG is not set
+# end of FIDO2 / Passkey authenticator
+
+#
 # TinyUSB Stack
 #
 CONFIG_TINYUSB_DEBUG_LEVEL=1
