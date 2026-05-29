@@ -1,6 +1,6 @@
 # bluepass
 
-> Hardware Bluetooth → USB HID bridge with password injection, TOTP codes, FIDO2/Passkey hardware security key and jiggler — firmware for ESP32-S3.
+> A $2 no-solder device that extends any keyboard: remap keys, inject passwords, type TOTP codes, authenticate with FIDO2 passkeys, keep the host awake with a jiggler, trigger smart-home automations — all from a hotkey, nothing installed on the host. Firmware for ESP32-S3.
 
 ![Version](https://img.shields.io/badge/version-2.1.0-blue)
 ![ESP-IDF](https://img.shields.io/badge/ESP--IDF-v5.2%2B-blue)
@@ -13,19 +13,37 @@
 
 ## What is bluepass?
 
-bluepass is a small hardware device that connects a Bluetooth keyboard to a laptop over USB. It forwards all keystrokes transparently — the laptop sees a standard USB HID keyboard and never knows there is anything in between.
+bluepass is a tiny, inexpensive device — a single ESP32-S3 SuperMini module costing around $2, assembled without soldering. It sits between a keyboard and any device that accepts keyboard input, and silently extends what a keyboard can do.
 
-The interesting part is what happens to *certain* key combinations. You assign hotkeys to stored secrets: a password, a one-time code from your authenticator app, or a block of text. When you press the hotkey on your Bluetooth keyboard, bluepass intercepts it and types the secret on the laptop character by character, over USB, without ever exposing it to software on the host.
+**Any keyboard, any target.** bluepass accepts input from Bluetooth or USB HID keyboards — and from almost any other USB HID device: game controllers, TV remotes, barcode scanners. It forwards everything to the target device over USB or Bluetooth, depending on the configured mode:
 
-Starting with **v2.x**, bluepass also acts as a **FIDO2/Passkey hardware security key** — a second USB HID interface presents itself as an authenticator. Store passkeys (resident credentials) directly on the device and confirm authentication with a button press, with no additional hardware required.
+```
+BT-USB (default)   Bluetooth keyboard ──BLE──▶ [ESP32-S3] ──USB HID──▶ laptop
+BT-BT              Bluetooth keyboard ──BLE──▶ [ESP32-S3] ──BLE──▶  tablet / BT host
+USB-BT             USB keyboard  ──USB──▶ [ESP32-S3] ──BLE──▶  laptop / BT host
+```
 
-There is no driver, no browser extension, and no software to install. Secrets live in the device flash, encrypted at rest. The web management interface is hosted locally on the device and is **never reachable without a deliberate button press** — it activates on demand and shuts itself off after five minutes of inactivity.
+The connection mode is switched from the web interface — no reflashing required. bluepass works with anything that accepts a USB or Bluetooth keyboard: laptops, desktops, tablets, phones, smart TVs, game consoles.
+
+**Key remapping — without touching the host.** Assign any action to any key combination. The host sees only standard HID keystrokes — it has no idea a substitution happened, and its settings are never modified.
+
+**Password injection — one key, no software.** Assign a hotkey to a stored password. Press it — the password is typed on the host character by character over USB HID, regardless of how long it is. Passwords are stored encrypted in flash and never returned by the web API. No browser extension, no clipboard, no host software.
+
+**One-time codes — right from the keyboard.** bluepass generates TOTP codes (RFC 6238) — the same algorithm as Google Authenticator, Authy, and Microsoft Authenticator. Press a hotkey and the current 6-digit code is typed immediately, without any app on the host.
+
+**FIDO2 / Passkey hardware security key.** bluepass presents a second USB HID interface that browsers and operating systems recognise as a CTAP2 hardware authenticator — the same protocol as YubiKey. Store passkeys and hardware credentials directly on the device and confirm authentication with a physical button press. The FIDO2 interface and keyboard interface are active simultaneously.
+
+**Jiggler.** A hotkey toggles periodic harmless keypresses that keep the host awake — no screen-saver, no lock screen, no sleep. Interval and key code are configurable; the state survives reboot.
+
+**Smart-home integration.** Hotkeys can trigger HTTP webhooks (GET requests to any URL) or publish to MQTT topics — handy for Home Assistant, Node-RED, or any automation platform. bluepass can also *receive* MQTT messages and respond with a keystroke sent to the host.
+
+**Encrypted at rest — nothing extractable.** All passwords, TOTP secrets, and FIDO2 credentials are stored under ESP32 hardware AES-XTS flash encryption. The key is burned into eFuse and cannot be read out or cloned. The web management interface is never exposed on the network — it activates only on an explicit button press and shuts off after five minutes of inactivity.
 
 ### What problem does it solve?
 
-Password managers and authenticator apps require software on the host. On locked-down corporate machines, kiosks, remote-desktop sessions, or shared workstations you often cannot install anything. bluepass requires nothing from the host — it looks like a USB keyboard plus a security key.
+On locked-down corporate machines, shared workstations, kiosks, remote-desktop sessions, or smart TVs you cannot install software. bluepass requires nothing from the host — it looks like a standard USB keyboard plus a security key.
 
-It also means your secrets are never typed by software on the host. A keylogger on the host sees keystrokes but has no way to distinguish a real keystroke from a substituted one, and the source of the secret never touches host memory.
+Your secrets never touch host software. Passwords and keys are delivered as HID events originating from hardware. A keylogger on the host sees characters arrive but has no visibility into their source — the secret never passes through any process, clipboard, or extension on the host machine.
 
 ---
 
