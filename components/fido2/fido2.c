@@ -1373,7 +1373,7 @@ static void ctaphid_dispatch(uint32_t cid, uint8_t cmd,
         resp[10] = (new_cid >>  8) & 0xFF;
         resp[11] =  new_cid        & 0xFF;
         resp[12] = 2;   // CTAPHID protocol version
-        resp[13] = 1;   // major version (Bluepass 1.x)
+        resp[13] = 2;   // major version (Bluepass 2.x)
         resp[14] = 0;   // minor version
         resp[15] = 0;   // build
         resp[16] = 0x04 | 0x08; // CAPABILITY_CBOR | CAPABILITY_NMSG
