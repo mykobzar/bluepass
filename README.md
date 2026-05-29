@@ -1,6 +1,6 @@
 # bluepass
 
-> Hardware Bluetooth → USB HID bridge with password injection, authenticator app codes and jiggler — firmware for ESP32-S3.
+> Hardware Bluetooth → USB HID bridge with password injection, TOTP codes, FIDO2/Passkey hardware security key and jiggler — firmware for ESP32-S3.
 
 ![Version](https://img.shields.io/badge/version-2.1.0-blue)
 ![ESP-IDF](https://img.shields.io/badge/ESP--IDF-v5.2%2B-blue)
@@ -18,15 +18,17 @@
 
 ## What is bluepass?
 
-bluepass is a small hardware device that sits between a Bluetooth keyboard and a laptop. It forwards all keystrokes transparently — the laptop sees a standard USB HID keyboard and never knows there is anything in between.
+bluepass is a small hardware device that connects a Bluetooth keyboard to a laptop over USB. It forwards all keystrokes transparently — the laptop sees a standard USB HID keyboard and never knows there is anything in between.
 
 The interesting part is what happens to *certain* key combinations. You assign hotkeys to stored secrets: a password, a one-time code from your authenticator app, or a block of text. When you press the hotkey on your Bluetooth keyboard, bluepass intercepts it and types the secret on the laptop character by character, over USB, without ever exposing it to software on the host.
 
-There is no driver, no browser extension, and no software to install. The secrets live in the device flash, encrypted at rest. The web management interface is hosted locally on the device and is **never reachable without a deliberate button press** — it activates on demand and shuts itself off after five minutes of inactivity.
+Starting with **v2.x**, bluepass also acts as a **FIDO2/Passkey hardware security key** — a second USB HID interface presents itself as an authenticator. Store passkeys (resident credentials) directly on the device and confirm authentication with a button press, with no additional hardware required.
+
+There is no driver, no browser extension, and no software to install. Secrets live in the device flash, encrypted at rest. The web management interface is hosted locally on the device and is **never reachable without a deliberate button press** — it activates on demand and shuts itself off after five minutes of inactivity.
 
 ### What problem does it solve?
 
-Password managers and authenticator apps require software on the host. On locked-down corporate machines, kiosks, remote-desktop sessions, or shared workstations you often cannot install anything. bluepass requires nothing from the host — it looks like a USB keyboard.
+Password managers and authenticator apps require software on the host. On locked-down corporate machines, kiosks, remote-desktop sessions, or shared workstations you often cannot install anything. bluepass requires nothing from the host — it looks like a USB keyboard plus a security key.
 
 It also means your secrets are never typed by software on the host. A keylogger on the host sees keystrokes but has no way to distinguish a real keystroke from a substituted one, and the source of the secret never touches host memory.
 
@@ -34,11 +36,20 @@ It also means your secrets are never typed by software on the host. A keylogger 
 
 ## What it does
 
+bluepass supports three **connection modes** (configurable in the web interface):
+
 ```
-Bluetooth keyboard  ──BLE──▶  [ESP32-S3 board]  ──USB HID──▶  laptop
+BT-USB (default)
+Bluetooth keyboard  ──BLE──▶  [ESP32-S3]  ──USB HID──▶  laptop
+
+BT-BT
+Bluetooth keyboard  ──BLE──▶  [ESP32-S3]  ──BLE──▶  laptop / BT host
+
+USB-BT
+USB keyboard  ──USB HID──▶  [ESP32-S3]  ──BLE──▶  laptop / BT host
 ```
 
-All keystrokes pass through transparently. Configured hotkey combinations are intercepted and replaced with:
+In all modes, configured hotkey combinations are intercepted and replaced with:
 
 | Substitution | Description |
 |---|---|
@@ -49,6 +60,14 @@ All keystrokes pass through transparently. Configured hotkey combinations are in
 | **Webhook** | Sends an HTTP GET request to a configured URL when a hotkey is pressed |
 | **MQTT Out** | Publishes a message to an MQTT topic when a hotkey is pressed |
 | **MQTT In** | Sends a keystroke to the host when an MQTT message is received on a subscribed topic |
+
+In addition, bluepass acts as a **FIDO2/Passkey authenticator** on a separate USB HID interface — available in BT-USB mode simultaneously with the keyboard:
+
+| Feature | Description |
+|---|---|
+| **Passkeys / resident keys** | Store FIDO2 credentials on the device; no server-side credential storage required |
+| **clientPIN** | Protect credentials with a PIN |
+| **User presence confirmation** | Physical button press (or a configured keyboard hotkey) confirms each authentication request |
 
 The web interface is available over WiFi and **only after an explicit button press** — it is never exposed on boot.
 
@@ -89,7 +108,7 @@ The **Board** tab in the web interface lets you configure which GPIO pins the bu
 
 > **Note for boards without a button:** GPIO0 is the ROM bootloader entry pin and is pulled up by default. A momentary switch to GND on GPIO0 works as the bluepass button on any board.
 
-> **Note for boards with a simple LED (not WS2812):** Set LED type to *Simple* in the Board tab and configure the GPIO and active level. The same state machine (web UI active, WiFi error, jiggler, substitution flash) works with both LED types; the simple LED shows on/off instead of colour.
+> **Note for boards with a simple LED (not WS2812):** Set LED type to *Simple* in the Board tab and configure the GPIO and active level. The same state machine works with both LED types; the simple LED shows on/off instead of colour.
 
 ### Flash and RAM requirements
 
@@ -285,7 +304,7 @@ Find the device IP in your router's client list (hostname: `bluepass`) and open 
 ### Step 5 — pair the Bluetooth keyboard
 
 1. Put your keyboard into pairing mode.
-2. Open the **Bluetooth** tab → **Scan (4 s)**.
+2. Open the **Connection** tab → **Scan (4 s)**.
 3. Click **Connect** next to your keyboard.
 4. If a PIN prompt appears, type it on the keyboard and press Enter.
 
@@ -302,15 +321,18 @@ The paired address is saved to NVS and reconnected automatically on the next boo
 
 The button GPIO can be changed in **Settings → Board**. Default: GPIO0.
 
+The button also serves as the **user-presence confirmation** for FIDO2 authentication requests — a single press confirms the pending operation.
+
 **LED behaviour:**
 
-| State | WS2812 RGB LED | Simple LED |
-|---|---|---|
-| Web interface active | Solid **blue** | On |
-| WiFi not connected / no credentials | **Red** fast blink (5 Hz) | Fast blink |
-| Jiggler running | **Green** slow blink (1 Hz) | Slow blink |
-| Password / text / TOTP substituted | Single **white** 150 ms flash | 150 ms pulse |
-| Connected, idle | Off | Off |
+| State | WS2812 RGB LED | Simple LED | Priority |
+|---|---|---|---|
+| Web interface active | Solid **blue** | On | 1 (highest) |
+| FIDO2 user-presence wait | Solid **amber** | On | 2 |
+| WiFi not connected / no credentials | **Red** fast blink (5 Hz) | Fast blink | 3 |
+| Jiggler running | **Green** slow blink (~0.35 Hz) | Slow blink | 4 |
+| Password / text / TOTP substituted | Single **white** 150 ms flash | 150 ms pulse | — |
+| Connected, idle | Off | Off | — |
 
 LED type (RGB / Simple / None), GPIO pin, and brightness are configurable in **Settings → Board**.  
 The web interface **turns off automatically after 5 minutes of inactivity** (no browser requests).
@@ -319,15 +341,16 @@ The web interface **turns off automatically after 5 minutes of inactivity** (no 
 
 ## Web interface
 
-The interface is divided into four top-level sections. **Hotkeys** and **Settings** each reveal a submenu when selected.
+The interface is divided into five top-level sections. **Hotkeys** and **Settings** each reveal a submenu when selected.
 
 ### Main navigation
 
 | Section | Description |
 |---|---|
 | **Info** | WiFi and Bluetooth connection status with signal strength; live key log |
-| **Bluetooth** | Scan, pair, disconnect; BLE diagnostic log |
+| **Connection** | Connection mode selector (BT-USB / BT-BT / USB-BT); Bluetooth keyboard scan and pair; BLE diagnostic log |
 | **Hotkeys** | All hotkey-based actions (see below) |
+| **Passkey** | Confirm-key assignment for FIDO2 user-presence (shown only when FIDO2 is enabled in Settings) |
 | **Settings** | Device configuration (see below) |
 
 ### Hotkeys submenu
@@ -338,10 +361,11 @@ The interface is divided into four top-level sections. **Hotkeys** and **Setting
 | **Passwords** | Hotkey → password (masked in the UI, never returned by the API) |
 | **Authenticator** | Hotkey → TOTP one-time code; shows device clock sync status |
 | **Jiggler** | Jiggler interval, key code, enable/disable hotkeys |
-| **List** | Full HID keycode reference (keyboard + Consumer Control) |
 | **Webhook** | Hotkey → HTTP GET request to a configured URL |
 | **MQTT Out** | Hotkey → publish to an MQTT topic *(visible only when MQTT Out is enabled)* |
 | **MQTT In** | Subscribe topic → send keystroke *(visible only when MQTT In is enabled)* |
+
+Full HID keycode reference: [`docs/keycodes.md`](docs/keycodes.md) — also linked from each hotkey tab.
 
 ### Settings submenu
 
@@ -352,10 +376,39 @@ The interface is divided into four top-level sections. **Hotkeys** and **Setting
 | **MQTT** | Broker URL, credentials; enable/disable MQTT Out and MQTT In |
 | **Firmware** | OTA firmware update |
 | **Flash Encryption** | Flash encryption status; switch from Development to Release mode |
+| **Passkey** | Enable/disable FIDO2 authenticator; set or change PIN |
 
 ---
 
 ## Features
+
+### Connection modes
+
+bluepass can operate in three connection modes, selectable in the **Connection** tab (takes effect after reboot):
+
+| Mode | Keyboard input | Computer output | Use case |
+|---|---|---|---|
+| **BT-USB** (default) | Bluetooth HID | USB HID | Classic bridge — BT keyboard to USB host |
+| **BT-BT** | Bluetooth HID | Bluetooth HID | Relay — forward BT keyboard input to a BT host (laptop, tablet, phone) |
+| **USB-BT** | USB HID | Bluetooth HID | Reverse bridge — physical USB keyboard to a BT host |
+
+In all modes the hotkey substitution engine, FIDO2 authenticator, jiggler, and all other features remain active.
+
+### FIDO2 / Passkey authenticator
+
+bluepass implements the **CTAP2 standard** (Client to Authenticator Protocol 2), presenting itself to the host as a USB HID security key — the same protocol used by hardware tokens such as YubiKey.
+
+Features:
+- **Resident keys (passkeys)** — FIDO2 credentials are stored directly on the device; no server-side credential storage is required
+- **clientPIN** — protect stored credentials with a numeric PIN; set and change from **Settings → Passkey**
+- **User presence confirmation** — the amber LED lights up when a website or application requests authentication; press the physical button (or a configured keyboard hotkey on the **Passkey** tab) to confirm
+- **Diagnostic log** — live CTAP2 command log visible at the bottom of the **Settings → Passkey** tab; useful for debugging
+
+Enable FIDO2: **Settings → Passkey → Enable FIDO2 / Passkey** → Save (triggers reboot).
+
+The FIDO2 interface and the keyboard interface are independent — both are active simultaneously in BT-USB mode. Passkey authentication does not interrupt keyboard input.
+
+> FIDO2 requires BT-USB mode (dual USB HID — keyboard + authenticator). In BT-BT and USB-BT modes the authenticator is unavailable.
 
 ### Passwords
 
@@ -376,7 +429,7 @@ Assign a hotkey to a service secret (base32 string). Pressing the hotkey types t
 
 **Requirements:**
 - The device must be connected to WiFi.
-- The system clock must be synchronised with NTP. The **TOTP** tab shows the sync status (`Device: synced Δ±Xs`). Codes are not generated if the clock is not synced.
+- The system clock must be synchronised with NTP. The **Authenticator** tab shows the sync status (`Device: synced Δ±Xs`). Codes are not generated if the clock is not synced.
 
 **Import from Google Authenticator:**  
 The **Authenticator** tab includes an importer for `otpauth-migration://offline?data=…` links exported by the Google Authenticator app. Secrets from other apps can be entered manually as a base32 string.
@@ -457,7 +510,7 @@ The **Settings → Board** tab configures the physical GPIO assignments without 
 | Button GPIO | 0 | GPIO pin for the control button |
 | LED type | RGB | WS2812 RGB (via RMT) or simple GPIO output or None |
 | RGB GPIO | 48 | Data pin for the WS2812 LED |
-| Brightness | 4% | RGB LED brightness (1–100%) |
+| Brightness | 20% | RGB LED brightness (1–100%) |
 | Simple GPIO | — | GPIO pin for a plain (non-RGB) LED |
 | Active high | Yes | Whether the simple LED is on when GPIO is high |
 
@@ -482,7 +535,7 @@ Open **[https://mykobzar.github.io/bluepass/](https://mykobzar.github.io/bluepas
 Use the `-enc` firmware variant from [`firmware/`](firmware/) — see [`firmware/README.md`](firmware/README.md) for the full flash command.
 
 **Switching to Release mode:**  
-After enabling encryption, use **Settings → Flash Encryption → Switch to Release Mode** to permanently disable UART flashing and JTAG. This burns additional eFuse bits that cannot be undone. Switching to Release mode is irreversible.
+After enabling encryption, use **Settings → Flash Encryption → Switch to Release Mode** to permanently disable UART flashing and JTAG. This burns additional eFuse bits that cannot be undone.
 
 > Verify that OTA firmware updates work correctly before switching to Release mode.
 
@@ -504,7 +557,7 @@ Expand **Manual upload** and select a `.bin` file from your computer. The file i
 
 **Erase settings option**
 
-Before updating, you can check **Erase all settings after update** to wipe the NVS partition on reboot. This removes WiFi credentials, hotkeys, passwords, TOTP secrets, and the paired keyboard — the device starts from factory defaults after flashing.
+Before updating, you can check **Erase all settings after update** to wipe the NVS partition on reboot. This removes WiFi credentials, hotkeys, passwords, TOTP secrets, paired keyboard, and stored passkeys — the device starts from factory defaults after flashing.
 
 ---
 
@@ -529,7 +582,7 @@ Hotkeys are entered in the format `<Modifier>+<Key>` in any Hotkey field.
 
 `<Enter>` `<Esc>` `<Tab>` `<Space>` `<Backspace>` `<Delete>` `<Insert>` `<Home>` `<End>` `<PgUp>` `<PgDn>` `<F1>`–`<F24>` `<↑>` `<↓>` `<←>` `<→>` `<A>`–`<Z>` `<0>`–`<9>` and more.
 
-Full list available on the **List** tab in the web interface.
+Full list: [`docs/keycodes.md`](docs/keycodes.md).
 
 ### Keys by hex code
 
@@ -558,16 +611,18 @@ Full list available on the **List** tab in the web interface.
 | `jiggler` | Interval, key, on/off hotkeys, enabled state |
 | `ble` | Paired keyboard address + name |
 | `board` | Button GPIO, LED type, LED GPIO, brightness |
-| `webhook` | Broker enabled flag + up to 4 webhook slots (URL, value, trigger) |
+| `webhook` | Up to 4 webhook slots (URL, value, trigger) |
 | `mqtt` | Broker URL/credentials, enabled flags + up to 4 Out slots + up to 4 In slots |
+| `conn` | Connection mode (BT-USB / BT-BT / USB-BT) |
+| `fido2` | FIDO2 enabled flag, PIN hash, up to 8 resident credentials (passkeys) |
 
-**Slot limits:** 32 hotkey slots (passwords + text + TOTP combined) · 4 webhook slots · 4 MQTT Out slots · 4 MQTT In slots.
+**Slot limits:** 32 hotkey slots (passwords + text + TOTP combined) · 4 webhook slots · 4 MQTT Out slots · 4 MQTT In slots · 8 passkey resident credentials.
 
 ---
 
 ## Full factory reset
 
-Erases all flash including NVS — removes WiFi, hotkeys, TOTP secrets, jiggler config, paired keyboard, and board config:
+Erases all flash including NVS — removes WiFi, hotkeys, TOTP secrets, jiggler config, paired keyboard, board config, and stored passkeys:
 
 ```bash
 idf.py -p /dev/ttyUSB0 erase-flash
@@ -575,7 +630,7 @@ idf.py -p /dev/ttyUSB0 erase-flash
 
 Then flash the firmware again and run through first-time setup.
 
-**WiFi-only reset:** hold the button for ≥ 10 seconds. Hotkeys, TOTP secrets, jiggler settings, and board config are preserved.
+**WiFi-only reset:** hold the button for ≥ 10 seconds. Hotkeys, TOTP secrets, jiggler settings, board config, and FIDO2 credentials are preserved.
 
 ---
 
