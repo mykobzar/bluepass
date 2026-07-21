@@ -453,7 +453,7 @@ static esp_err_t handler_usb_host_status(httpd_req_t *req)
 // GET /api/ble/scan   — blocks ~4 s while scanning, returns JSON array of devices
 // POST /api/ble/connect — {"addr":"aa:bb:cc:dd:ee:ff","addr_type":0}
 
-#define BLE_SCAN_MS       4000
+#define BLE_SCAN_MS       6000
 #define BLE_MAX_RESULTS   20
 
 static ble_scan_result_t s_scan_buf[BLE_MAX_RESULTS];
@@ -461,11 +461,20 @@ static int               s_scan_count;
 
 static void on_scan_result(const ble_scan_result_t *r, void *ctx)
 {
-    if (s_scan_count >= BLE_MAX_RESULTS) return;
-    // Deduplicate by address
+    // Deduplicate by address. If we already have this device, fill in the name
+    // from a later report (the name often arrives only in the scan response, a
+    // separate advertising report) and keep the strongest RSSI seen.
     for (int i = 0; i < s_scan_count; i++) {
-        if (memcmp(s_scan_buf[i].addr, r->addr, 6) == 0) return;
+        if (memcmp(s_scan_buf[i].addr, r->addr, 6) == 0) {
+            if (s_scan_buf[i].name[0] == '\0' && r->name[0] != '\0') {
+                strncpy(s_scan_buf[i].name, r->name, sizeof(s_scan_buf[i].name) - 1);
+                s_scan_buf[i].name[sizeof(s_scan_buf[i].name) - 1] = '\0';
+            }
+            if (r->rssi > s_scan_buf[i].rssi) s_scan_buf[i].rssi = r->rssi;
+            return;
+        }
     }
+    if (s_scan_count >= BLE_MAX_RESULTS) return;
     s_scan_buf[s_scan_count++] = *r;
 }
 

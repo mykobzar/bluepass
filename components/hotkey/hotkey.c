@@ -28,6 +28,14 @@ void hotkey_engine_set_output(const hid_output_ops_t *ops)
 static key_event_cb_t s_event_cb;
 static void *s_event_ctx;
 
+// Duplicate-report suppression: some BLE keyboards notify the same keypress on two
+// Input Report characteristics, so one physical press arrives as two identical
+// reports a few ms apart → doubled key-log lines and double hotkey substitution.
+// A genuine re-press of the same key always has a release (all-zero) report in
+// between, so an exact-duplicate report within a short window is a duplicate.
+static bluepass_hid_report_t s_last_report;
+static int64_t                s_last_report_us;
+
 static uint8_t s_jig_on_mod,  s_jig_on_kc;
 static uint8_t s_jig_off_mod, s_jig_off_kc;
 
@@ -171,6 +179,16 @@ static void fire_substitution(const bluepass_hid_report_t *report,
 
 void hotkey_engine_process(const bluepass_hid_report_t *report)
 {
+    // Drop exact-duplicate reports arriving back-to-back within a short window
+    // (keyboards that mirror a keypress onto two Input Report characteristics).
+    int64_t now = esp_timer_get_time();
+    if (s_last_report_us && (now - s_last_report_us) < 100000 &&
+        memcmp(report, &s_last_report, sizeof(*report)) == 0) {
+        return;
+    }
+    s_last_report    = *report;
+    s_last_report_us = now;
+
     if (is_all_zero(report)) {
         if (s_out.send_report) s_out.send_report(&report->keyboard);
         if (s_had_consumer) {
