@@ -10,6 +10,7 @@ After flashing, use **Settings → Board** to configure the correct GPIO pins fo
 
 | Version | Date | Notes |
 |---|---|---|
+| **2.1.3** | 2026-07-21 | Fix OTA `connect failed` introduced by 2.1.2's static 16 KB TLS buffer exhausting heap under concurrent WiFi+BLE+USB — enable `MBEDTLS_DYNAMIC_BUFFER` so TLS RX/TX buffers are allocated to the actual record size and freed after use (16384 kept only as a ceiling); peak heap returns to the ~4 KB level while the large `raw.githubusercontent.com` cert record still fits |
 | **2.1.2** | 2026-07-21 | Fix OTA update failing with `ESP_ERR_HTTP_CONNECT` — raise `MBEDTLS_SSL_IN_CONTENT_LEN` 4096→16384 so the `raw.githubusercontent.com` TLS certificate record (~4127 B) fits the input buffer; `/api/ota/check` (api.github.com, ~2718 B) was already under the limit, which is why version-check worked but the download did not |
 | **2.1.1** | 2026-07-21 | Fix BLE scan failing while an auto-reconnect is pending — `ble_hid_host_start_scan` now cancels any in-flight GAP connect/discovery before `ble_gap_disc`; web UI surfaces the real scan error instead of a JSON-parse error |
 | **2.1.0** | 2026-05-29 | First stable release of v2.x — FIDO2/Passkey authenticator (CTAP2, clientPIN, resident keys), multi-role connection modes (BT-USB, BT-BT, USB-BT), all 2.0.x-beta fixes merged |
@@ -50,9 +51,31 @@ After flashing, use **Settings → Board** to configure the correct GPIO pins fo
 
 ---
 
-## Files — v2.1.2
+## Files — v2.1.3
 
 Two variants are available.  Use the **standard** variant for a normal install.  Use the **encrypted** variant if you want hardware-level AES-XTS flash encryption.
+
+### Standard (no encryption)
+
+| File | Flash address | Description |
+|---|---|---|
+| `bootloader-2.1.3.bin` | `0x0` | Second-stage bootloader |
+| `partition-table-2.1.3.bin` | `0x8000` | Partition layout (NVS + dual OTA slots) |
+| `ota_data_initial-2.1.3.bin` | `0x10000` | OTA slot selector (initial state) |
+| `bluepass-2.1.3.bin` | `0x20000` | Main application |
+
+### With flash encryption (recommended)
+
+| File | Flash address | Description |
+|---|---|---|
+| `bootloader-2.1.3-enc.bin` | `0x0` | Bootloader with encryption support |
+| `partition-table-2.1.3-enc.bin` | `0x8000` | Partition layout |
+| `ota_data_initial-2.1.3-enc.bin` | `0x10000` | OTA slot selector |
+| `bluepass-2.1.3-enc.bin` | `0x20000` | Main application (encryption-enabled build) |
+
+---
+
+## Files — v2.1.2 (previous stable)
 
 ### Standard (no encryption)
 
@@ -63,7 +86,7 @@ Two variants are available.  Use the **standard** variant for a normal install. 
 | `ota_data_initial-2.1.2.bin` | `0x10000` | OTA slot selector (initial state) |
 | `bluepass-2.1.2.bin` | `0x20000` | Main application |
 
-### With flash encryption (recommended)
+### With flash encryption
 
 | File | Flash address | Description |
 |---|---|---|
@@ -71,28 +94,6 @@ Two variants are available.  Use the **standard** variant for a normal install. 
 | `partition-table-2.1.2-enc.bin` | `0x8000` | Partition layout |
 | `ota_data_initial-2.1.2-enc.bin` | `0x10000` | OTA slot selector |
 | `bluepass-2.1.2-enc.bin` | `0x20000` | Main application (encryption-enabled build) |
-
----
-
-## Files — v2.1.1 (previous stable)
-
-### Standard (no encryption)
-
-| File | Flash address | Description |
-|---|---|---|
-| `bootloader-2.1.1.bin` | `0x0` | Second-stage bootloader |
-| `partition-table-2.1.1.bin` | `0x8000` | Partition layout (NVS + dual OTA slots) |
-| `ota_data_initial-2.1.1.bin` | `0x10000` | OTA slot selector (initial state) |
-| `bluepass-2.1.1.bin` | `0x20000` | Main application |
-
-### With flash encryption
-
-| File | Flash address | Description |
-|---|---|---|
-| `bootloader-2.1.1-enc.bin` | `0x0` | Bootloader with encryption support |
-| `partition-table-2.1.1-enc.bin` | `0x8000` | Partition layout |
-| `ota_data_initial-2.1.1-enc.bin` | `0x10000` | OTA slot selector |
-| `bluepass-2.1.1-enc.bin` | `0x20000` | Main application (encryption-enabled build) |
 
 ---
 
@@ -202,10 +203,10 @@ esptool.py \
   --flash_mode dio \
   --flash_freq 80m \
   --flash_size 4MB \
-  0x0     bootloader-2.1.2.bin \
-  0x8000  partition-table-2.1.2.bin \
-  0x10000 ota_data_initial-2.1.2.bin \
-  0x20000 bluepass-2.1.2.bin
+  0x0     bootloader-2.1.3.bin \
+  0x8000  partition-table-2.1.3.bin \
+  0x10000 ota_data_initial-2.1.3.bin \
+  0x20000 bluepass-2.1.3.bin
 ```
 
 ### With flash encryption (recommended, advanced)
@@ -223,10 +224,10 @@ esptool.py \
   --flash_mode dio \
   --flash_freq 80m \
   --flash_size 4MB \
-  0x0     bootloader-2.1.2-enc.bin \
-  0x8000  partition-table-2.1.2-enc.bin \
-  0x10000 ota_data_initial-2.1.2-enc.bin \
-  0x20000 bluepass-2.1.2-enc.bin
+  0x0     bootloader-2.1.3-enc.bin \
+  0x8000  partition-table-2.1.3-enc.bin \
+  0x10000 ota_data_initial-2.1.3-enc.bin \
+  0x20000 bluepass-2.1.3-enc.bin
 ```
 
 After flashing, the bootloader generates an AES-XTS key, burns it into eFuse, and reboots into Development mode automatically.
@@ -262,10 +263,10 @@ esptool.py ^
   --flash_mode dio ^
   --flash_freq 80m ^
   --flash_size 4MB ^
-  0x0     bootloader-2.1.2.bin ^
-  0x8000  partition-table-2.1.2.bin ^
-  0x10000 ota_data_initial-2.1.2.bin ^
-  0x20000 bluepass-2.1.2.bin
+  0x0     bootloader-2.1.3.bin ^
+  0x8000  partition-table-2.1.3.bin ^
+  0x10000 ota_data_initial-2.1.3.bin ^
+  0x20000 bluepass-2.1.3.bin
 ```
 
 Replace `COM3` with your actual port number.  
@@ -282,10 +283,10 @@ For the encrypted variant use the `-enc` filenames (see Linux/macOS section abov
 
    | File | Address |
    |---|---|
-   | `bootloader-2.1.2.bin` | `0x0` |
-   | `partition-table-2.1.2.bin` | `0x8000` |
-   | `ota_data_initial-2.1.2.bin` | `0x10000` |
-   | `bluepass-2.1.2.bin` | `0x20000` |
+   | `bootloader-2.1.3.bin` | `0x0` |
+   | `partition-table-2.1.3.bin` | `0x8000` |
+   | `ota_data_initial-2.1.3.bin` | `0x10000` |
+   | `bluepass-2.1.3.bin` | `0x20000` |
 
 5. Set **COM** to your port, **BAUD** to `460800`.
 6. Set **SPI SPEED: 80 MHz**, **SPI MODE: DIO**, **FLASH SIZE: 4MB**.
