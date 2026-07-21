@@ -104,8 +104,14 @@ static esp_err_t handler_ws(httpd_req_t *req)
 {
     bump_idle_timer();
     if (req->method == HTTP_GET) {
-        // New WS handshake — record client fd
+        // New WS handshake — record client fd. httpd reuses socket fds across
+        // reconnects/reloads, so guard against registering the same fd twice:
+        // a duplicate entry would receive every broadcast N times → N duplicate
+        // key-log lines (one per accumulated reload).
         int fd = httpd_req_to_sockfd(req);
+        for (int i = 0; i < s_ws_count; i++) {
+            if (s_ws_clients[i] == fd) return ESP_OK;  // already registered
+        }
         if (s_ws_count < WS_MAX_CLIENTS) {
             s_ws_clients[s_ws_count++] = fd;
         }
