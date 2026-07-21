@@ -20,6 +20,7 @@
 #include "esp_https_ota.h"
 #include "esp_system.h"
 #include "esp_heap_caps.h"
+#include "esp_tls.h"
 #include "esp_app_desc.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -869,17 +870,34 @@ static esp_err_t handler_ota_check(httpd_req_t *req)
     // Diagnostic: capture heap state so a "connect failed" (which esp_http_client_open
     // masks as a generic ESP_ERR_HTTP_CONNECT) can be attributed to heap vs. TLS/DNS.
     size_t heap_free = esp_get_free_heap_size();
-    size_t heap_int  = heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
     size_t heap_blk  = heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
 
     esp_err_t oerr = esp_http_client_open(client, 0);
     if (oerr != ESP_OK) {
         esp_http_client_cleanup(client);
-        char msg[192];
+
+        // esp_http_client collapses every transport failure into ESP_ERR_HTTP_CONNECT.
+        // Probe api.github.com directly with esp_tls to recover the real mbedTLS error
+        // code + cert-verify flags — that is what actually tells us why 16384 fails.
+        int tls_code = 0, tls_flags = 0;
+        esp_err_t tls_last = ESP_OK;
+        esp_tls_cfg_t tcfg = { .crt_bundle_attach = esp_crt_bundle_attach, .timeout_ms = 10000 };
+        esp_tls_t *probe = esp_tls_init();
+        if (probe) {
+            if (esp_tls_conn_new_sync("api.github.com", 14, 443, &tcfg, probe) != 1) {
+                esp_tls_error_handle_t eh = NULL;
+                if (esp_tls_get_error_handle(probe, &eh) == ESP_OK && eh)
+                    tls_last = esp_tls_get_and_clear_last_error(eh, &tls_code, &tls_flags);
+            }
+            esp_tls_conn_destroy(probe);
+        }
+
+        char msg[256];
         snprintf(msg, sizeof(msg),
-                 "{\"error\":\"connect failed: %s (heap=%u internal=%u largest=%u)\"}",
-                 esp_err_to_name(oerr),
-                 (unsigned)heap_free, (unsigned)heap_int, (unsigned)heap_blk);
+                 "{\"error\":\"connect failed: %s | tls_last=%s tls_code=-0x%04X flags=0x%X | heap=%u largest=%u\"}",
+                 esp_err_to_name(oerr), esp_err_to_name(tls_last),
+                 (unsigned)((-tls_code) & 0xFFFF), (unsigned)tls_flags,
+                 (unsigned)heap_free, (unsigned)heap_blk);
         httpd_resp_sendstr(req, msg);
         return ESP_OK;
     }
