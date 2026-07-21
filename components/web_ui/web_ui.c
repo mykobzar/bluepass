@@ -19,6 +19,7 @@
 #include "esp_ota_ops.h"
 #include "esp_https_ota.h"
 #include "esp_system.h"
+#include "esp_heap_caps.h"
 #include "esp_app_desc.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -865,9 +866,21 @@ static esp_err_t handler_ota_check(httpd_req_t *req)
 
     httpd_resp_set_type(req, "application/json");
 
-    if (esp_http_client_open(client, 0) != ESP_OK) {
+    // Diagnostic: capture heap state so a "connect failed" (which esp_http_client_open
+    // masks as a generic ESP_ERR_HTTP_CONNECT) can be attributed to heap vs. TLS/DNS.
+    size_t heap_free = esp_get_free_heap_size();
+    size_t heap_int  = heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+    size_t heap_blk  = heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+
+    esp_err_t oerr = esp_http_client_open(client, 0);
+    if (oerr != ESP_OK) {
         esp_http_client_cleanup(client);
-        httpd_resp_sendstr(req, "{\"error\":\"connect failed\"}");
+        char msg[192];
+        snprintf(msg, sizeof(msg),
+                 "{\"error\":\"connect failed: %s (heap=%u internal=%u largest=%u)\"}",
+                 esp_err_to_name(oerr),
+                 (unsigned)heap_free, (unsigned)heap_int, (unsigned)heap_blk);
+        httpd_resp_sendstr(req, msg);
         return ESP_OK;
     }
 
