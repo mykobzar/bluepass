@@ -3,6 +3,8 @@
 #include "esp_log.h"
 #include "esp_check.h"
 #include "esp_timer.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 #include "nimble/nimble_port.h"
 #include "nimble/nimble_port_freertos.h"
 #include "host/ble_hs.h"
@@ -694,7 +696,11 @@ esp_err_t ble_hid_host_start_scan(uint32_t duration_ms,
 
     struct ble_gap_disc_params params = {
         .passive           = 0,
-        .filter_duplicates = 1,
+        // filter_duplicates=0: let the controller report the scan response too.
+        // Many devices carry their name only in the scan response, which the
+        // controller would otherwise suppress as a duplicate → "(unknown)".
+        // Deduplication + name capture happen in the web_ui result callback.
+        .filter_duplicates = 0,
         .itvl              = BLE_GAP_SCAN_FAST_INTERVAL_MAX,
         .window            = BLE_GAP_SCAN_FAST_WINDOW,
     };
@@ -715,15 +721,36 @@ esp_err_t ble_hid_host_stop_scan(void)
 
 esp_err_t ble_hid_host_connect(const uint8_t addr[6], uint8_t addr_type)
 {
+    // A user-initiated connect must win over background GAP activity: stop
+    // auto-reconnect to a previous peer and cancel any in-flight scan or connect
+    // procedure. Otherwise ble_gap_connect() returns BLE_HS_EALREADY/EBUSY and the
+    // first attempt silently fails — the classic "connects only on the second try".
+    esp_timer_stop(s_reconnect_timer);
+    ble_gap_disc_cancel();
+    ble_gap_conn_cancel();
+
     memcpy(s_ctx.peer_addr, addr, 6);
     s_ctx.peer_addr_type = addr_type;
     s_ctx.peer_known     = true;
 
     ble_addr_t peer = { .type = addr_type };
     memcpy(peer.val, addr, 6);
-    int rc = ble_gap_connect(BLE_OWN_ADDR_PUBLIC, &peer, 30000, NULL,
+
+    // Retry a few times: cancelling a pending procedure completes asynchronously,
+    // so the very next ble_gap_connect() can still see the stack as busy.
+    int rc = BLE_HS_EALREADY;
+    for (int attempt = 0; attempt < 3 && rc != 0; attempt++) {
+        if (attempt) {
+            ble_gap_disc_cancel();
+            ble_gap_conn_cancel();
+            vTaskDelay(pdMS_TO_TICKS(150));
+        }
+        rc = ble_gap_connect(BLE_OWN_ADDR_PUBLIC, &peer, 30000, NULL,
                              gap_event_handler, NULL);
-    blog("gap_connect addr_type=%d rc=%d", addr_type, rc);
+        blog("gap_connect attempt=%d addr_type=%d rc=%d", attempt, addr_type, rc);
+        if (rc != 0 && rc != BLE_HS_EALREADY && rc != BLE_HS_EBUSY)
+            break;  // hard error (e.g. bad params) — don't spin
+    }
     return rc == 0 ? ESP_OK : ESP_FAIL;
 }
 
