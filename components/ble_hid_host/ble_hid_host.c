@@ -686,6 +686,12 @@ esp_err_t ble_hid_host_start_scan(uint32_t duration_ms,
     s_ctx.scan_cb  = result_cb;
     s_ctx.scan_ctx = ctx;
 
+    // A pending auto-reconnect (ble_gap_connect) or a stale discovery procedure
+    // keeps the GAP layer busy and makes ble_gap_disc() fail with
+    // BLE_HS_EALREADY/EBUSY. Cancel both first so a user-initiated scan can run.
+    ble_gap_disc_cancel();
+    ble_gap_conn_cancel();
+
     struct ble_gap_disc_params params = {
         .passive           = 0,
         .filter_duplicates = 1,
@@ -694,7 +700,11 @@ esp_err_t ble_hid_host_start_scan(uint32_t duration_ms,
     };
     int rc = ble_gap_disc(BLE_OWN_ADDR_PUBLIC, duration_ms, &params,
                           gap_event_handler, NULL);
-    return rc == 0 ? ESP_OK : ESP_FAIL;
+    if (rc != 0) {
+        blog("ble_gap_disc failed rc=%d", rc);
+        return ESP_FAIL;
+    }
+    return ESP_OK;
 }
 
 esp_err_t ble_hid_host_stop_scan(void)
