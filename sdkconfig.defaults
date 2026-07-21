@@ -48,7 +48,7 @@ CONFIG_HTTPD_MAX_OPEN_SOCKETS=5
 # mbedTLS — SHA-1 required for TOTP HMAC-SHA1; reduced TLS frame buffers (4 KB sufficient
 # for GitHub OTA and HTTPS webhooks; standard TLS max-record is 16 KB but rarely needed)
 CONFIG_MBEDTLS_SHA1_C=y
-CONFIG_MBEDTLS_SSL_IN_CONTENT_LEN=4096
+CONFIG_MBEDTLS_SSL_IN_CONTENT_LEN=16384
 CONFIG_MBEDTLS_SSL_OUT_CONTENT_LEN=4096
 
 # MQTT
