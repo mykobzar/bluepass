@@ -1435,6 +1435,8 @@ esp_err_t web_ui_start(void)
     cfg.stack_size        = 8192;   // default 4096 overflows during OTA (buf[1024] + flash writes)
     cfg.recv_wait_timeout = 30;     // seconds; default 5 is too short for ~1.3 MB upload over WiFi
     cfg.send_wait_timeout = 30;
+    cfg.lru_purge_enable  = true;   // recycle the oldest idle connection instead of hoarding
+                                    // sockets — leaves a socket free for outbound HTTPS (OTA)
 
     ESP_RETURN_ON_ERROR(httpd_start(&s_server, &cfg), TAG, "httpd start failed");
 
