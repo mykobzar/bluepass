@@ -1,4 +1,5 @@
 #include "usb_hid_device.h"
+#include "hid_text.h"
 #include "esp_log.h"
 #include "esp_check.h"
 #include "tinyusb.h"
@@ -8,6 +9,7 @@
 #include "freertos/task.h"
 #include <string.h>
 #include <stdio.h>
+#include <inttypes.h>
 
 #define TAG "usb_hid"
 #define REPORT_ID_KEYBOARD 1
@@ -18,6 +20,12 @@
 #define TYPE_INTER_KEY_MS  10     // ms between key-down and key-up when typing
 
 static fido2_rx_cb_t s_fido2_rx_cb;
+
+// Keyboard LED state as last reported by the host (Num/Caps/Scroll Lock).
+// Needed because Windows Alt+numpad entry only works with Num Lock on.
+// s_leds_valid stays false until the host actually sends an output report.
+static volatile uint8_t s_host_leds;
+static volatile bool    s_leds_valid;
 
 void usb_hid_fido2_set_rx_cb(fido2_rx_cb_t cb) { s_fido2_rx_cb = cb; }
 
@@ -214,31 +222,95 @@ esp_err_t usb_hid_device_send_release(void)
     return ESP_OK;
 }
 
+// Tap `kc` while holding `mod`, then release the key but keep `mod` down.
+static esp_err_t tap_key(uint8_t mod, uint8_t kc)
+{
+    const uint8_t down[6] = {kc, 0, 0, 0, 0, 0};
+    const uint8_t up[6]   = {0};
+    if (!wait_hid_ready()) return ESP_ERR_INVALID_STATE;
+    tud_hid_keyboard_report(REPORT_ID_KEYBOARD, mod, down);
+    vTaskDelay(pdMS_TO_TICKS(TYPE_INTER_KEY_MS));
+    if (!wait_hid_ready()) return ESP_ERR_INVALID_STATE;
+    tud_hid_keyboard_report(REPORT_ID_KEYBOARD, mod, up);
+    vTaskDelay(pdMS_TO_TICKS(TYPE_INTER_KEY_MS));
+    return ESP_OK;
+}
+
+static const uint8_t s_kp_digit[10] = {
+    HID_KEY_KEYPAD_0, HID_KEY_KEYPAD_1, HID_KEY_KEYPAD_2, HID_KEY_KEYPAD_3,
+    HID_KEY_KEYPAD_4, HID_KEY_KEYPAD_5, HID_KEY_KEYPAD_6, HID_KEY_KEYPAD_7,
+    HID_KEY_KEYPAD_8, HID_KEY_KEYPAD_9,
+};
+
+// Windows Alt+numpad entry: hold Left Alt, type "0" + the three-digit decimal
+// CP1252 code, release Alt — the host emits the character when Alt goes up.
+// The leading zero selects the ANSI code page instead of the OEM one. Numpad
+// scan codes are the same on every layout, so this is layout-independent.
+// Requires Num Lock on — the caller arranges that.
+static esp_err_t type_alt_numpad(uint8_t b)
+{
+    esp_err_t err = ESP_OK;
+    const uint8_t digits[4] = {0, (uint8_t)(b / 100), (uint8_t)(b / 10 % 10), (uint8_t)(b % 10)};
+    for (int i = 0; i < 4 && err == ESP_OK; i++)
+        err = tap_key(HID_MOD_L_ALT, s_kp_digit[digits[i]]);
+
+    usb_hid_device_send_release();       // Alt up → character is delivered
+    vTaskDelay(pdMS_TO_TICKS(TYPE_INTER_KEY_MS));
+    return err;
+}
+
+// True if the string contains anything that needs Alt+numpad entry.
+static bool needs_numpad(const char *str)
+{
+    const uint8_t *p = (const uint8_t *)str;
+    uint32_t cp;
+    while ((cp = hid_utf8_next(&p)) != 0)
+        if (cp > 0x7E && hid_cp1252_from_codepoint(cp) >= 0) return true;
+    return false;
+}
+
 esp_err_t usb_hid_device_type_string(const char *str)
 {
-    while (*str) {
-        unsigned char c = (unsigned char)*str++;
-        if (c == '\n') {
-            const uint8_t kc[6] = {HID_KEY_ENTER};
-            if (!wait_hid_ready()) return ESP_ERR_INVALID_STATE;
-            tud_hid_keyboard_report(REPORT_ID_KEYBOARD, 0, kc);
-            vTaskDelay(pdMS_TO_TICKS(TYPE_INTER_KEY_MS));
-            usb_hid_device_send_release();
-            vTaskDelay(pdMS_TO_TICKS(TYPE_INTER_KEY_MS));
+    // Toggle Num Lock once for the whole string rather than per character.
+    // Only act on a LED state the host has actually reported — if it never sent
+    // one, leave Num Lock alone instead of guessing and possibly turning it off.
+    bool toggle_numlock = needs_numpad(str) && s_leds_valid &&
+                          !(s_host_leds & KEYBOARD_LED_NUMLOCK);
+    if (toggle_numlock) {
+        tap_key(0, HID_KEY_NUM_LOCK);
+        vTaskDelay(pdMS_TO_TICKS(30));   // let the host apply the toggle
+    }
+
+    esp_err_t err = ESP_OK;
+    const uint8_t *p = (const uint8_t *)str;
+    uint32_t cp;
+    while (err == ESP_OK && (cp = hid_utf8_next(&p)) != 0) {
+        if (cp == '\n') {
+            err = tap_key(0, HID_KEY_ENTER);
             continue;
         }
-        if (c < 0x20 || c > 0x7E) continue;
 
-        uint8_t kc  = s_ascii_map[c - 0x20].kc;
-        uint8_t mod = s_ascii_map[c - 0x20].mod;
-        const uint8_t keys[6] = {kc, 0, 0, 0, 0, 0};
-        if (!wait_hid_ready()) return ESP_ERR_INVALID_STATE;
-        tud_hid_keyboard_report(REPORT_ID_KEYBOARD, mod, keys);
-        vTaskDelay(pdMS_TO_TICKS(TYPE_INTER_KEY_MS));
-        usb_hid_device_send_release();
-        vTaskDelay(pdMS_TO_TICKS(TYPE_INTER_KEY_MS));
+        if (cp >= 0x20 && cp <= 0x7E) {
+            err = tap_key(s_ascii_map[cp - 0x20].mod, s_ascii_map[cp - 0x20].kc);
+            continue;
+        }
+
+        if (cp < 0x20) continue;   // other control characters — nothing to type
+
+        int b = hid_cp1252_from_codepoint(cp);
+        if (b < 0) {
+            ESP_LOGW(TAG, "U+%04"PRIX32" has no CP1252 mapping — skipped", cp);
+            continue;
+        }
+        err = type_alt_numpad((uint8_t)b);
     }
-    return ESP_OK;
+
+    if (toggle_numlock) {
+        vTaskDelay(pdMS_TO_TICKS(30));
+        tap_key(0, HID_KEY_NUM_LOCK);
+    }
+    usb_hid_device_send_release();   // tap_key leaves modifiers held — clear them
+    return err;
 }
 
 // Uses Ctrl+Shift+U followed by hex digits (X11/GTK Unicode entry)
@@ -295,7 +367,20 @@ void tud_hid_set_report_cb(uint8_t instance, uint8_t report_id,
                             hid_report_type_t report_type,
                             uint8_t const *buffer, uint16_t bufsize)
 {
-    (void)report_id; (void)report_type;
-    if (instance == 1 && bufsize >= 64 && s_fido2_rx_cb)
+    if (instance == 1 && bufsize >= 64 && s_fido2_rx_cb) {
         s_fido2_rx_cb(buffer);
+        return;
+    }
+    // Keyboard interface: the host pushes the LED state as an output report.
+    // Sent over the control pipe (report_id in the request) or, on some hosts,
+    // as a raw buffer whose first byte is the report ID.
+    if (instance == 0 && report_type == HID_REPORT_TYPE_OUTPUT) {
+        if (report_id == REPORT_ID_KEYBOARD && bufsize >= 1) {
+            s_host_leds = buffer[0];
+            s_leds_valid = true;
+        } else if (report_id == 0 && bufsize >= 2 && buffer[0] == REPORT_ID_KEYBOARD) {
+            s_host_leds = buffer[1];
+            s_leds_valid = true;
+        }
+    }
 }
