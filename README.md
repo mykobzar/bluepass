@@ -2,7 +2,7 @@
 
 > A $2 no-solder gadget that gives any keyboard superpowers: type any password or authenticator code with one key, authenticate with a hardware security key, connect any keyboard to any device, keep the screen awake, trigger smart-home automations — no software on the host, nothing installed, nothing changed. Firmware for ESP32-S3.
 
-![Version](https://img.shields.io/badge/version-2.1.8-blue)
+![Version](https://img.shields.io/badge/version-2.1.9-blue)
 ![ESP-IDF](https://img.shields.io/badge/ESP--IDF-v5.2%2B-blue)
 ![Target](https://img.shields.io/badge/target-ESP32--S3-informational)
 ![License](https://img.shields.io/badge/license-MIT-green)
@@ -174,18 +174,18 @@ Flash (replace the port with yours):
 # Linux / macOS
 esptool.py --chip esp32s3 --port /dev/ttyUSB0 --baud 460800 write_flash \
   --flash_mode dio --flash_freq 80m --flash_size 4MB \
-  0x0     firmware/bootloader-2.1.8.bin \
-  0x8000  firmware/partition-table-2.1.8.bin \
-  0x10000 firmware/ota_data_initial-2.1.8.bin \
-  0x20000 firmware/bluepass-2.1.8.bin
+  0x0     firmware/bootloader-2.1.9.bin \
+  0x8000  firmware/partition-table-2.1.9.bin \
+  0x10000 firmware/ota_data_initial-2.1.9.bin \
+  0x20000 firmware/bluepass-2.1.9.bin
 
 # Windows — use COM3, COM4, etc.
 esptool.py --chip esp32s3 --port COM3 --baud 460800 write_flash ^
   --flash_mode dio --flash_freq 80m --flash_size 4MB ^
-  0x0     firmware\bootloader-2.1.8.bin ^
-  0x8000  firmware\partition-table-2.1.8.bin ^
-  0x10000 firmware\ota_data_initial-2.1.8.bin ^
-  0x20000 firmware\bluepass-2.1.8.bin
+  0x0     firmware\bootloader-2.1.9.bin ^
+  0x8000  firmware\partition-table-2.1.9.bin ^
+  0x10000 firmware\ota_data_initial-2.1.9.bin ^
+  0x20000 firmware\bluepass-2.1.9.bin
 ```
 
 > **Windows GUI option:** see [`firmware/README.md`](firmware/README.md) for step-by-step instructions using the Espressif Flash Download Tool (no Python required).
