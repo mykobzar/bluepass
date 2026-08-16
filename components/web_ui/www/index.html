@@ -184,6 +184,10 @@
   </div>
   <div id="log"></div>
   <button onclick="clearLog()" style="margin-top:0.4rem">Clear</button>
+  <div id="info-time" style="margin-top:1rem;border:1px solid #444;border-radius:6px;padding:0.6rem 0.9rem">
+    <strong>Device time</strong>
+    <div id="info-time-body" style="margin-top:0.3rem;font-size:0.9rem;color:#aaa">Loading…</div>
+  </div>
 </div>
 
 <!-- Text -->
@@ -971,7 +975,13 @@ function show(name) {
     (mainNavVisible && settingsTabs.includes(name)) ? 'block' : 'none';
   document.getElementById('activities-nav').style.display =
     (mainNavVisible && activitiesTabs.includes(name)) ? 'block' : 'none';
-  if (name === 'log')      { loadInfoCards(); }
+  if (name === 'log') {
+    loadInfoCards();
+    loadDeviceTime();
+    if (!s_infoTimeTimer) s_infoTimeTimer = setInterval(tickDeviceTime, 1000);
+  } else {
+    clearInterval(s_infoTimeTimer); s_infoTimeTimer = null;
+  }
   if (name === 'wifi')     { loadWifiTabStatus(); }
   if (name === 'connection') { loadConnMode(); loadBleStatus(); loadBleLog(); }
   if (name === 'security') { loadSecurity(); }
@@ -1137,6 +1147,52 @@ async function loadInfoCards() {
         (d.name ? `<br>Last: ${d.name}` : '');
     }
   } catch(_) { document.getElementById('info-ble-body').textContent = 'Error'; }
+}
+
+// ── Device time / uptime ──────────────────────────────────────────────────────
+
+let s_timeBase = null;    // {epoch, uptime, synced, at}  — at = browser ms at fetch
+let s_timeFetchAt = 0;    // browser ms of last /api/time attempt (success or not)
+let s_infoTimeTimer = null;
+
+function pad2(n) { return String(n).padStart(2, '0'); }
+
+function fmtUptime(sec) {
+  sec = Math.max(0, Math.floor(sec));
+  const d = Math.floor(sec / 86400);
+  const h = Math.floor(sec % 86400 / 3600);
+  const m = Math.floor(sec % 3600 / 60);
+  const s = sec % 60;
+  return (d ? d + 'd ' : '') + pad2(h) + ':' + pad2(m) + ':' + pad2(s);
+}
+
+function tickDeviceTime() {
+  // re-sync with the device once a minute so local drift never accumulates
+  if (Date.now() - s_timeFetchAt > 60000) { loadDeviceTime(); return; }
+  renderDeviceTime();
+}
+
+function renderDeviceTime() {
+  const el = document.getElementById('info-time-body');
+  if (!el) return;
+  if (!s_timeBase) { el.textContent = 'Unavailable'; return; }
+  const drift = (Date.now() - s_timeBase.at) / 1000;
+  const t = new Date((s_timeBase.epoch + drift) * 1000);
+  const stamp = t.getUTCFullYear() + '-' + pad2(t.getUTCMonth() + 1) + '-' + pad2(t.getUTCDate()) +
+    ' ' + pad2(t.getUTCHours()) + ':' + pad2(t.getUTCMinutes()) + ':' + pad2(t.getUTCSeconds()) + ' UTC';
+  el.innerHTML = `Date &amp; time: ${stamp}` +
+    (s_timeBase.synced ? '' : ' <span style="color:#f44336">(not synced)</span>') +
+    `<br>Uptime: ${fmtUptime(s_timeBase.uptime + drift)}`;
+}
+
+async function loadDeviceTime() {
+  s_timeFetchAt = Date.now();
+  try {
+    const r = await fetch('/api/time');
+    const d = await r.json();
+    s_timeBase = { epoch: d.epoch, uptime: d.uptime || 0, synced: d.synced, at: Date.now() };
+  } catch (_) { s_timeBase = null; }
+  renderDeviceTime();
 }
 
 // ── Connection mode ───────────────────────────────────────────────────────────

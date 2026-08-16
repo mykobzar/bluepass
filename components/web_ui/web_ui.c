@@ -602,7 +602,7 @@ static esp_err_t handler_version_get(httpd_req_t *req)
 }
 
 // ── Time API ─────────────────────────────────────────────────────────────────
-// GET /api/time → {"epoch":1748000000,"synced":true}
+// GET /api/time → {"epoch":1748000000,"synced":true,"uptime":3600}
 
 static esp_err_t handler_time_get(httpd_req_t *req)
 {
@@ -611,6 +611,7 @@ static esp_err_t handler_time_get(httpd_req_t *req)
     cJSON *obj = cJSON_CreateObject();
     cJSON_AddNumberToObject(obj, "epoch", (double)now);
     cJSON_AddBoolToObject(obj,   "synced", synced);
+    cJSON_AddNumberToObject(obj, "uptime", (double)(esp_timer_get_time() / 1000000LL));
     send_json(req, obj);
     cJSON_Delete(obj);
     return ESP_OK;
