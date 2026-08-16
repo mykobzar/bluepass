@@ -200,11 +200,24 @@ static bool wait_hid_ready(void)
     return false;
 }
 
+// tud_hid_keyboard_report() reports whether the report was queued; ignoring it
+// silently drops a keystroke. That is fatal to Alt+numpad, where a lost release
+// between two identical digits (0083 has two zeroes) merges them into one press
+// and the host commits the wrong code point.
+static bool kbd_report(uint8_t mod, const uint8_t *keys)
+{
+    for (int attempt = 0; attempt < 3; attempt++) {
+        if (wait_hid_ready() &&
+            tud_hid_keyboard_report(REPORT_ID_KEYBOARD, mod, keys)) return true;
+        vTaskDelay(pdMS_TO_TICKS(2));
+    }
+    ESP_LOGW(TAG, "HID report dropped (mod=0x%02X key=0x%02X)", mod, keys[0]);
+    return false;
+}
+
 esp_err_t usb_hid_device_send_report(const hid_keyboard_report_t *report)
 {
-    if (!wait_hid_ready()) return ESP_ERR_INVALID_STATE;
-    tud_hid_keyboard_report(REPORT_ID_KEYBOARD, report->modifier, report->keycode);
-    return ESP_OK;
+    return kbd_report(report->modifier, report->keycode) ? ESP_OK : ESP_ERR_INVALID_STATE;
 }
 
 esp_err_t usb_hid_device_send_consumer(uint16_t usage_id)
@@ -216,10 +229,8 @@ esp_err_t usb_hid_device_send_consumer(uint16_t usage_id)
 
 esp_err_t usb_hid_device_send_release(void)
 {
-    if (!wait_hid_ready()) return ESP_ERR_INVALID_STATE;
     const uint8_t empty[6] = {0};
-    tud_hid_keyboard_report(REPORT_ID_KEYBOARD, 0, empty);
-    return ESP_OK;
+    return kbd_report(0, empty) ? ESP_OK : ESP_ERR_INVALID_STATE;
 }
 
 // Tap `kc` while holding `mod`, then release the key but keep `mod` down.
@@ -227,11 +238,9 @@ static esp_err_t tap_key(uint8_t mod, uint8_t kc)
 {
     const uint8_t down[6] = {kc, 0, 0, 0, 0, 0};
     const uint8_t up[6]   = {0};
-    if (!wait_hid_ready()) return ESP_ERR_INVALID_STATE;
-    tud_hid_keyboard_report(REPORT_ID_KEYBOARD, mod, down);
+    if (!kbd_report(mod, down)) return ESP_ERR_INVALID_STATE;
     vTaskDelay(pdMS_TO_TICKS(TYPE_INTER_KEY_MS));
-    if (!wait_hid_ready()) return ESP_ERR_INVALID_STATE;
-    tud_hid_keyboard_report(REPORT_ID_KEYBOARD, mod, up);
+    if (!kbd_report(mod, up)) return ESP_ERR_INVALID_STATE;
     vTaskDelay(pdMS_TO_TICKS(TYPE_INTER_KEY_MS));
     return ESP_OK;
 }
@@ -259,6 +268,27 @@ static esp_err_t type_alt_numpad(uint8_t b)
     return err;
 }
 
+// Windows hex entry: hold Alt, tap numpad '+', type the code point in hex,
+// release Alt. Sends real Unicode, so it escapes the code-page trap of the
+// decimal form — but the host must have EnableHexNumpad set in the registry,
+// and A–F go out as ordinary letter keys, which a non-Latin layout will mangle.
+static esp_err_t type_alt_hex(uint32_t cp)
+{
+    esp_err_t err = tap_key(HID_MOD_L_ALT, HID_KEY_KEYPAD_ADD);
+
+    char hex[8];
+    int  n = snprintf(hex, sizeof(hex), "%X", (unsigned)cp);
+    for (int i = 0; i < n && err == ESP_OK; i++) {
+        uint8_t kc = (hex[i] <= '9') ? s_kp_digit[hex[i] - '0']
+                                     : (uint8_t)(HID_KEY_A + (hex[i] - 'A'));
+        err = tap_key(HID_MOD_L_ALT, kc);
+    }
+
+    usb_hid_device_send_release();       // Alt up → character is delivered
+    vTaskDelay(pdMS_TO_TICKS(TYPE_INTER_KEY_MS));
+    return err;
+}
+
 // True if the string contains anything that needs Alt+numpad entry.
 static bool needs_numpad(const char *str, uint8_t mode)
 {
@@ -267,6 +297,9 @@ static bool needs_numpad(const char *str, uint8_t mode)
     uint32_t cp;
     while ((cp = hid_utf8_next(&p)) != 0) {
         if (cp < 0x20) continue;
+        // Hex mode types every printable character on the numpad, and it can
+        // reach code points CP1252 has no byte for, so no mapping check here.
+        if (mode == HID_TEXT_MODE_ALT_HEX) return true;
         // In Alt mode even ASCII goes through the numpad, so any printable
         // character is enough to require Num Lock.
         if (mode == HID_TEXT_MODE_ALT || cp > 0x7E)
@@ -297,6 +330,11 @@ esp_err_t usb_hid_device_type_string(const char *str, uint8_t mode)
         }
 
         if (cp < 0x20) continue;   // other control characters — nothing to type
+
+        if (mode == HID_TEXT_MODE_ALT_HEX) {
+            err = type_alt_hex(cp);
+            continue;
+        }
 
         // Alt mode deliberately skips the scan-code path for ASCII too: a scan
         // code is a key position, so on a non-US host layout even plain symbols

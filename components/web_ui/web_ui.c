@@ -280,7 +280,7 @@ static esp_err_t handler_slots_put(httpd_req_t *req)
     // Typing mode is a text-slot setting only; anything else stays on auto.
     cJSON *sm_j = cJSON_GetObjectItem(json, "send_mode");
     slot.send_mode = (slot.type == SLOT_TYPE_TEXT && sm_j) ? (uint8_t)sm_j->valueint : 0;
-    if (slot.send_mode > HID_TEXT_MODE_SCAN) slot.send_mode = HID_TEXT_MODE_AUTO;
+    if (slot.send_mode > HID_TEXT_MODE_ALT_HEX) slot.send_mode = HID_TEXT_MODE_AUTO;
     strncpy(slot.label, cJSON_GetObjectItem(json, "label")->valuestring, sizeof(slot.label) - 1);
     cJSON *payload_j = cJSON_GetObjectItem(json, "payload");
     if (payload_j && payload_j->valuestring && payload_j->valuestring[0] != '\0') {

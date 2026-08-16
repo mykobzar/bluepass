@@ -216,13 +216,13 @@
   </label>
   <label>Typing mode
     <select id="tx-send-mode">
-      <option value="0">Auto — scan codes, Alt codes for special characters</option>
-      <option value="1">Alt codes only — layout-independent (Windows)</option>
-      <option value="2">Scan codes only — skips special characters</option>
+      <option value="0">Auto</option>
+      <option value="1">Alt codes — decimal (Windows)</option>
+      <option value="3">Alt codes — hex Unicode (Windows)</option>
+      <option value="2">Scan codes only</option>
     </select>
-    <span class="hotkey-hint">A scan code is a key <em>position</em>, so on a non-US host layout even
-      plain symbols like @ \ # come out wrong. Alt codes send the character itself and ignore the layout,
-      but they are Windows-only, need Num Lock on, and are about 5&times; slower.</span>
+    <span class="hotkey-hint">Pick a mode when the target computer uses a non-US keyboard layout &mdash;
+      <a href="https://github.com/mykobzar/bluepass#text-substitutions" target="_blank" rel="noopener">which one and why</a>.</span>
   </label>
   <button id="tx-add-btn" onclick="addSlot('text')">Add</button>
   <button id="tx-cancel-btn" onclick="cancelEdit('text')" style="display:none;margin-left:0.4rem">Cancel</button>
@@ -1435,7 +1435,7 @@ function modeCell(s) {
   const mLabel = s.consumer_code ? '—' : (mm === 0 ? 'Exact' : 'Keycode');
   const rLabel = rm === 0 ? 'Replace' : 'Keep';
   // Typing mode is only listed when it deviates from auto — keeps the column quiet
-  const sLabel = ['', 'Alt codes', 'Scan only'][s.send_mode || 0] || '';
+  const sLabel = ['', 'Alt dec', 'Scan only', 'Alt hex'][s.send_mode || 0] || '';
   return `<td style="white-space:nowrap;font-size:0.8rem;color:var(--dim)">`
     + `${mLabel}<br>${rLabel}${sLabel ? '<br>' + sLabel : ''}</td>`;
 }

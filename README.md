@@ -424,21 +424,39 @@ Assign a hotkey to a stored password. When the hotkey is pressed on the Bluetoot
 - Passwords are **never returned** by the REST API — the endpoint is write-only.
 - In the UI passwords are displayed as `***`.
 
+While any substitution is being typed, keys pressed on the keyboard are ignored rather than forwarded. The host tracks a single set of held modifiers, so a keystroke arriving mid-substitution — including the release of the trigger combo itself — would corrupt what is being typed. The window lasts as long as the substitution, well under a second.
+
 ### Text substitutions
 
 Same as passwords but the stored text is visible in the UI. Supports any printable ASCII character and newline. Useful for text snippets, signatures, or characters the physical keyboard layout cannot produce.
 
-**Typing mode** — how the characters reach the host. A scan code is a key *position*, not a character, so on a host that is not using a US layout even plain ASCII arrives wrong: `@ " # \ | ~` move around, and a QWERTZ layout swaps Y and Z. Alt+numpad sends the character code itself and is therefore layout-independent.
+#### Typing mode
 
-| Mode | Behaviour |
+Each text slot chooses how its characters reach the host. The setting exists because a keyboard does not send characters — it sends **key positions**, and the host decides what each position means.
+
+| Mode | How characters are sent |
 |---|---|
-| Auto (default) | ASCII as scan codes, anything else via Alt+numpad |
-| Alt codes only | Every printable character via Alt+numpad — immune to the host layout |
-| Scan codes only | Alt+numpad is never used; characters outside ASCII are skipped |
+| **Auto** (default) | ASCII as scan codes, everything else as Alt + decimal code |
+| **Alt codes — decimal** | Every character as Alt + decimal code |
+| **Alt codes — hex Unicode** | Every character as Alt + `+` + hex code point |
+| **Scan codes only** | Scan codes for ASCII; anything else is skipped |
 
-Pick **Alt codes only** when the host runs a non-US keyboard layout. Pick **Scan codes only** for macOS and Linux hosts, where Alt+numpad does not exist at all and the Auto mode would produce garbage the moment it meets a special character.
+**Which one to pick:**
 
-Alt+numpad has three limits worth knowing: it is a **Windows** mechanism, it needs **Num Lock on** (over USB the device reads the host's LED state and toggles it for the duration of the string; in BT-BT mode the BLE profile has no LED characteristic, so Num Lock must already be on), and it costs five keystrokes per character, so long strings type noticeably slower. Characters outside CP1252 — Cyrillic, CJK, emoji — cannot be sent by any mode.
+| Host | Mode |
+|---|---|
+| Windows, US layout | Auto |
+| Windows, other Latin layout (German, French, …) | Alt codes — decimal |
+| Windows, non-Latin layout active (Cyrillic, Greek, …) | See the code-page note below |
+| macOS or Linux | Scan codes only |
+
+**Why scan codes are not enough.** A scan code identifies a key *position*. Send the position of the US `@` to a German host and you get `"`; on QWERTZ, Y and Z are swapped; under a Cyrillic layout every letter arrives Cyrillic. Stored text that is not pure US-layout ASCII therefore needs one of the Alt modes.
+
+**The code-page catch (decimal mode).** Alt + a decimal code does bypass key positions, but Windows interprets the number through the **ANSI code page of the active input language** — not always CP1252. With a Cyrillic layout active that is CP1251, where code 252 is `ь`, not `ü`; `ü` has no CP1251 representation at all, so no decimal code can produce it. ASCII is unaffected: every ANSI code page shares it, which is why decimal mode reliably fixes `@ \ # { }` on any layout. To type a character the active code page does not contain, either switch the host to a Latin layout first, or use hex mode.
+
+**Hex mode** sends the Unicode code point itself, so it is free of the code-page problem and can reach characters CP1252 has no byte for. It has two requirements: the host needs `EnableHexNumpad` set to `"1"` under `HKEY_CURRENT_USER\Control Panel\Input Method` (a one-time registry change, effective after re-login), and the hex digits `A`–`F` travel as ordinary letter keys, so a Latin layout must be active for code points that contain them. Code points whose hex form is all digits work under any layout.
+
+**Shared limits of both Alt modes.** They are **Windows** mechanisms — macOS and Linux ignore them. They need **Num Lock on**: over USB the device reads the host's LED state and toggles Num Lock for the duration of the string, but the BLE HID profile has no LED characteristic, so in BT-BT mode Num Lock must already be on. And each character costs five to seven keystrokes, so long strings type visibly slower.
 
 The mode is stored per slot and applies to text substitutions only. Passwords and TOTP codes always use Auto.
 

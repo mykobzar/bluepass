@@ -48,11 +48,17 @@ typedef struct {
     uint8_t send_mode;     // hid_text_mode_t, from the slot (text slots only)
 } type_job_t;
 
+// True while a substitution is being typed. The typing task and the key
+// pass-through both drive the same modifier state on the host, so a report
+// forwarded mid-substitution corrupts it — see hotkey_engine_process().
+static volatile bool s_typing;
+
 static void typing_task(void *arg)
 {
     type_job_t job;
     while (true) {
         if (xQueueReceive(s_type_queue, &job, portMAX_DELAY)) {
+            s_typing = true;
             if (s_out.send_release) s_out.send_release();
             vTaskDelay(pdMS_TO_TICKS(20));
             if (s_out.type_string) s_out.type_string(job.text, job.send_mode);
@@ -64,6 +70,7 @@ static void typing_task(void *arg)
                 };
                 s_out.send_report(&mod_report);
             }
+            s_typing = false;
         }
     }
 }
@@ -184,6 +191,14 @@ static void fire_substitution(const bluepass_hid_report_t *report,
 
 void hotkey_engine_process(const bluepass_hid_report_t *report)
 {
+    // Never forward keys while a substitution is being typed. The host holds a
+    // single modifier state, and the release of the trigger combo itself lands
+    // a few hundred ms after the typing starts — forwarding it would clear the
+    // Alt that an Alt+numpad sequence is holding, so the host commits the
+    // truncated code instead (Alt+0083 → Alt+3 → "♥"). Keys pressed during the
+    // substitution are dropped; the window is well under a second.
+    if (s_typing) return;
+
     // Drop exact-duplicate reports arriving back-to-back within a short window
     // (keyboards that mirror a keypress onto two Input Report characteristics).
     int64_t now = esp_timer_get_time();
