@@ -369,6 +369,20 @@ void wifi_manager_set_state_cb(wifi_mgr_state_cb_t cb, void *ctx)
     s_state_cb_ctx = ctx;
 }
 
+void wifi_manager_set_power_save(bool enabled)
+{
+    // Not fatal if WiFi is not up yet (BT-only connection modes never start it):
+    // esp_wifi_set_ps then returns ESP_ERR_WIFI_NOT_INIT and the setting simply
+    // does not apply — there is no radio to put to sleep in the first place.
+    esp_err_t err = esp_wifi_set_ps(enabled ? WIFI_PS_MIN_MODEM : WIFI_PS_NONE);
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "set_ps(%s) failed: %s",
+                 enabled ? "MIN_MODEM" : "NONE", esp_err_to_name(err));
+        return;
+    }
+    ESP_LOGI(TAG, "WiFi modem sleep %s", enabled ? "on" : "off");
+}
+
 // ── LED public API ────────────────────────────────────────────────────────────
 
 void wifi_manager_led_on(void)

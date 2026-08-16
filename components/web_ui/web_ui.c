@@ -4,6 +4,7 @@
 #include "fido2.h"
 #include "jiggler.h"
 #include "hotkey.h"
+#include "hid_text.h"
 #include "wifi_manager.h"
 #include "ble_hid_host.h"
 #include "ble_hid_device.h"
@@ -229,6 +230,7 @@ static esp_err_t handler_slots_get(httpd_req_t *req)
         cJSON_AddNumberToObject(obj, "replace_mode", slot.replace_mode);
         if (slot.type == SLOT_TYPE_TEXT) {
             cJSON_AddStringToObject(obj, "payload", slot.payload);
+            cJSON_AddNumberToObject(obj, "send_mode", slot.send_mode);
         } else {
             cJSON_AddStringToObject(obj, "payload", "");
         }
@@ -275,6 +277,10 @@ static esp_err_t handler_slots_put(httpd_req_t *req)
     slot.match_mode   = mm_j ? (uint8_t)mm_j->valueint : 0;
     cJSON *rm_j = cJSON_GetObjectItem(json, "replace_mode");
     slot.replace_mode = rm_j ? (uint8_t)rm_j->valueint : 0;
+    // Typing mode is a text-slot setting only; anything else stays on auto.
+    cJSON *sm_j = cJSON_GetObjectItem(json, "send_mode");
+    slot.send_mode = (slot.type == SLOT_TYPE_TEXT && sm_j) ? (uint8_t)sm_j->valueint : 0;
+    if (slot.send_mode > HID_TEXT_MODE_SCAN) slot.send_mode = HID_TEXT_MODE_AUTO;
     strncpy(slot.label, cJSON_GetObjectItem(json, "label")->valuestring, sizeof(slot.label) - 1);
     cJSON *payload_j = cJSON_GetObjectItem(json, "payload");
     if (payload_j && payload_j->valuestring && payload_j->valuestring[0] != '\0') {
@@ -1497,6 +1503,11 @@ esp_err_t web_ui_start(void)
     if (s_server) return ESP_OK;
 
     wifi_manager_led_on();
+    // Keep the radio awake for as long as the config surface is up: modem sleep
+    // parks the station between DTIM beacons, which adds hundreds of ms of
+    // latency and drops frames on a weak link — exactly when a page load needs
+    // a steady stream. Restored in web_ui_stop().
+    wifi_manager_set_power_save(false);
 
     httpd_config_t cfg = HTTPD_DEFAULT_CONFIG();
     cfg.uri_match_fn     = httpd_uri_match_wildcard;
@@ -1585,6 +1596,7 @@ esp_err_t web_ui_stop(void)
     httpd_stop(s_server);
     s_server   = NULL;
     s_ws_count = 0;
+    wifi_manager_set_power_save(true);
     wifi_manager_led_off();
     ESP_LOGI(TAG, "web UI stopped");
     return ESP_OK;

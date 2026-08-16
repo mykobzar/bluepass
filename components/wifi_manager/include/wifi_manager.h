@@ -31,6 +31,13 @@ bool wifi_manager_is_time_synced(void);
 
 void wifi_manager_set_state_cb(wifi_mgr_state_cb_t cb, void *ctx);
 
+// WiFi modem sleep. Enabled by default (IDF's WIFI_PS_MIN_MODEM): the station
+// sleeps between DTIM beacons, which costs latency and, on a marginal link,
+// reliability. The web UI turns it off for as long as it is running — the board
+// is always USB-powered, so the milliamps are worth a stable config surface.
+// Safe to call before WiFi is up; the error is logged and swallowed.
+void wifi_manager_set_power_save(bool enabled);
+
 // LED control API:
 //   led_on / led_off  — called by web UI to signal its active/inactive state
 //   set_jiggler_active — called when jiggler is enabled/disabled
