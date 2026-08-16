@@ -1,5 +1,6 @@
 #include "ble_hid_device.h"
 #include "ble_hid_host.h"
+#include "hid_text.h"
 #include "esp_log.h"
 #include "esp_check.h"
 #include "nimble/nimble_port.h"
@@ -13,6 +14,7 @@
 #include "os/os_mbuf.h"
 #include <string.h>
 #include <stdio.h>
+#include <inttypes.h>
 
 #define TAG "ble_hid_dev"
 
@@ -421,11 +423,42 @@ esp_err_t ble_hid_device_send_release(void)
 
 #define TYPE_INTER_KEY_MS 20
 
+// Tap `kc` while holding `mod`, then release the key but keep `mod` down.
+static void tap_key(uint8_t mod, uint8_t kc)
+{
+    hid_keyboard_report_t down = {.modifier = mod, .keycode = {kc}};
+    ble_hid_device_send_report(&down);
+    vTaskDelay(pdMS_TO_TICKS(TYPE_INTER_KEY_MS));
+    hid_keyboard_report_t up = {.modifier = mod};
+    ble_hid_device_send_report(&up);
+    vTaskDelay(pdMS_TO_TICKS(TYPE_INTER_KEY_MS));
+}
+
+static const uint8_t s_kp_digit[10] = {
+    HID_KEY_KEYPAD_0, HID_KEY_KEYPAD_1, HID_KEY_KEYPAD_2, HID_KEY_KEYPAD_3,
+    HID_KEY_KEYPAD_4, HID_KEY_KEYPAD_5, HID_KEY_KEYPAD_6, HID_KEY_KEYPAD_7,
+    HID_KEY_KEYPAD_8, HID_KEY_KEYPAD_9,
+};
+
+// Windows Alt+numpad entry — see the USB implementation for the details.
+// Unlike the USB path we have no LED output report here, so Num Lock state is
+// unknown; the host must have it on for this to produce a character.
+static void type_alt_numpad(uint8_t b)
+{
+    const uint8_t digits[4] = {0, (uint8_t)(b / 100), (uint8_t)(b / 10 % 10), (uint8_t)(b % 10)};
+    for (int i = 0; i < 4; i++)
+        tap_key(HID_MOD_L_ALT, s_kp_digit[digits[i]]);
+
+    ble_hid_device_send_release();   // Alt up → character is delivered
+    vTaskDelay(pdMS_TO_TICKS(TYPE_INTER_KEY_MS));
+}
+
 esp_err_t ble_hid_device_type_string(const char *str)
 {
-    while (*str) {
-        unsigned char c = (unsigned char)*str++;
-        if (c == '\n') {
+    const uint8_t *p = (const uint8_t *)str;
+    uint32_t cp;
+    while ((cp = hid_utf8_next(&p)) != 0) {
+        if (cp == '\n') {
             hid_keyboard_report_t r = {.keycode = {HID_KEY_ENTER}};
             ble_hid_device_send_report(&r);
             vTaskDelay(pdMS_TO_TICKS(TYPE_INTER_KEY_MS));
@@ -433,14 +466,26 @@ esp_err_t ble_hid_device_type_string(const char *str)
             vTaskDelay(pdMS_TO_TICKS(TYPE_INTER_KEY_MS));
             continue;
         }
-        if (c < 0x20 || c > 0x7E) continue;
-        uint8_t kc  = s_ascii_map[c - 0x20].kc;
-        uint8_t mod = s_ascii_map[c - 0x20].mod;
-        hid_keyboard_report_t r = {.modifier = mod, .keycode = {kc}};
-        ble_hid_device_send_report(&r);
-        vTaskDelay(pdMS_TO_TICKS(TYPE_INTER_KEY_MS));
-        ble_hid_device_send_release();
-        vTaskDelay(pdMS_TO_TICKS(TYPE_INTER_KEY_MS));
+
+        if (cp >= 0x20 && cp <= 0x7E) {
+            uint8_t kc  = s_ascii_map[cp - 0x20].kc;
+            uint8_t mod = s_ascii_map[cp - 0x20].mod;
+            hid_keyboard_report_t r = {.modifier = mod, .keycode = {kc}};
+            ble_hid_device_send_report(&r);
+            vTaskDelay(pdMS_TO_TICKS(TYPE_INTER_KEY_MS));
+            ble_hid_device_send_release();
+            vTaskDelay(pdMS_TO_TICKS(TYPE_INTER_KEY_MS));
+            continue;
+        }
+
+        if (cp < 0x20) continue;   // other control characters — nothing to type
+
+        int b = hid_cp1252_from_codepoint(cp);
+        if (b < 0) {
+            ESP_LOGW(TAG, "U+%04"PRIX32" has no CP1252 mapping — skipped", cp);
+            continue;
+        }
+        type_alt_numpad((uint8_t)b);
     }
     return ESP_OK;
 }
