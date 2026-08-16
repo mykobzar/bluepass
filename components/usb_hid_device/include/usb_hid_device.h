@@ -17,7 +17,7 @@ esp_err_t usb_hid_device_send_release(void);
 
 // Type an ASCII/UTF-8 string, handling shift modifier automatically.
 // Blocks until all characters are sent (delays ~10 ms between key events).
-esp_err_t usb_hid_device_type_string(const char *str);
+esp_err_t usb_hid_device_type_string(const char *str, uint8_t mode);  // mode: hid_text_mode_t
 
 // Type a single Unicode code point via OS-specific input method.
 // Uses Ctrl+Shift+U sequence (X11/GTK) — adjust if targeting other OS.

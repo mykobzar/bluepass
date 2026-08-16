@@ -1,4 +1,5 @@
 #include "hotkey.h"
+#include "hid_text.h"
 #include "storage.h"
 #include "totp.h"
 #include "jiggler.h"
@@ -44,6 +45,7 @@ static QueueHandle_t s_type_queue;
 typedef struct {
     char    text[HOTKEY_PAYLOAD_MAX + 8];
     uint8_t restore_mods;  // if non-zero, re-send this modifier state after typing
+    uint8_t send_mode;     // hid_text_mode_t, from the slot (text slots only)
 } type_job_t;
 
 static void typing_task(void *arg)
@@ -53,7 +55,7 @@ static void typing_task(void *arg)
         if (xQueueReceive(s_type_queue, &job, portMAX_DELAY)) {
             if (s_out.send_release) s_out.send_release();
             vTaskDelay(pdMS_TO_TICKS(20));
-            if (s_out.type_string) s_out.type_string(job.text);
+            if (s_out.type_string) s_out.type_string(job.text, job.send_mode);
             if (job.restore_mods && s_out.send_report) {
                 hid_keyboard_report_t mod_report = {
                     .modifier = job.restore_mods,
@@ -157,6 +159,9 @@ static void fire_substitution(const bluepass_hid_report_t *report,
         type_job_t job = {0};
         strncpy(job.text, s->payload, sizeof(job.text) - 1);
         job.restore_mods = restore_mods;
+        // Only text slots expose the typing mode in the UI; passwords keep the
+        // auto behaviour so an old slot can never start typing differently.
+        job.send_mode = (s->type == SLOT_TYPE_TEXT) ? s->send_mode : HID_TEXT_MODE_AUTO;
         xQueueSend(s_type_queue, &job, 0);
         break;
     }

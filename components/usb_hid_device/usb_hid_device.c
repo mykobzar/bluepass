@@ -260,21 +260,27 @@ static esp_err_t type_alt_numpad(uint8_t b)
 }
 
 // True if the string contains anything that needs Alt+numpad entry.
-static bool needs_numpad(const char *str)
+static bool needs_numpad(const char *str, uint8_t mode)
 {
+    if (mode == HID_TEXT_MODE_SCAN) return false;   // never taps the numpad
     const uint8_t *p = (const uint8_t *)str;
     uint32_t cp;
-    while ((cp = hid_utf8_next(&p)) != 0)
-        if (cp > 0x7E && hid_cp1252_from_codepoint(cp) >= 0) return true;
+    while ((cp = hid_utf8_next(&p)) != 0) {
+        if (cp < 0x20) continue;
+        // In Alt mode even ASCII goes through the numpad, so any printable
+        // character is enough to require Num Lock.
+        if (mode == HID_TEXT_MODE_ALT || cp > 0x7E)
+            if (hid_cp1252_from_codepoint(cp) >= 0) return true;
+    }
     return false;
 }
 
-esp_err_t usb_hid_device_type_string(const char *str)
+esp_err_t usb_hid_device_type_string(const char *str, uint8_t mode)
 {
     // Toggle Num Lock once for the whole string rather than per character.
     // Only act on a LED state the host has actually reported — if it never sent
     // one, leave Num Lock alone instead of guessing and possibly turning it off.
-    bool toggle_numlock = needs_numpad(str) && s_leds_valid &&
+    bool toggle_numlock = needs_numpad(str, mode) && s_leds_valid &&
                           !(s_host_leds & KEYBOARD_LED_NUMLOCK);
     if (toggle_numlock) {
         tap_key(0, HID_KEY_NUM_LOCK);
@@ -290,12 +296,20 @@ esp_err_t usb_hid_device_type_string(const char *str)
             continue;
         }
 
-        if (cp >= 0x20 && cp <= 0x7E) {
+        if (cp < 0x20) continue;   // other control characters — nothing to type
+
+        // Alt mode deliberately skips the scan-code path for ASCII too: a scan
+        // code is a key position, so on a non-US host layout even plain symbols
+        // land wrong. Alt+numpad carries the CP1252 byte itself.
+        if (cp <= 0x7E && mode != HID_TEXT_MODE_ALT) {
             err = tap_key(s_ascii_map[cp - 0x20].mod, s_ascii_map[cp - 0x20].kc);
             continue;
         }
 
-        if (cp < 0x20) continue;   // other control characters — nothing to type
+        if (mode == HID_TEXT_MODE_SCAN) {
+            ESP_LOGW(TAG, "U+%04"PRIX32" needs Alt+numpad — skipped (scan-code mode)", cp);
+            continue;
+        }
 
         int b = hid_cp1252_from_codepoint(cp);
         if (b < 0) {
@@ -326,7 +340,7 @@ esp_err_t usb_hid_device_type_unicode(uint32_t codepoint)
     usb_hid_device_send_release();
     vTaskDelay(pdMS_TO_TICKS(TYPE_INTER_KEY_MS));
 
-    usb_hid_device_type_string(hex);
+    usb_hid_device_type_string(hex, HID_TEXT_MODE_AUTO);
 
     const uint8_t enter[6] = {HID_KEY_ENTER};
     if (!wait_hid_ready()) return ESP_ERR_INVALID_STATE;

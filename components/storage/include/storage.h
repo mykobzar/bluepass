@@ -23,6 +23,10 @@ typedef struct {
     bool active;
     uint8_t match_mode;    // 0 = exact (keycode + modifiers, default); 1 = keycode only
     uint8_t replace_mode;  // 0 = replace all (default); 1 = keep modifiers after substitution
+    // Keep new fields at the END: storage_get_hotkey_slot zero-fills the struct
+    // before reading and NVS returns shorter blobs happily, so slots written by
+    // older firmware keep working and land on the 0 default here.
+    uint8_t send_mode;     // hid_text_mode_t: 0 = auto, 1 = Alt codes, 2 = scan codes only
 } hotkey_slot_t;
 
 typedef struct {

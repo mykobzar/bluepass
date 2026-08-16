@@ -214,6 +214,16 @@
       </select>
     </div>
   </label>
+  <label>Typing mode
+    <select id="tx-send-mode">
+      <option value="0">Auto — scan codes, Alt codes for special characters</option>
+      <option value="1">Alt codes only — layout-independent (Windows)</option>
+      <option value="2">Scan codes only — skips special characters</option>
+    </select>
+    <span class="hotkey-hint">A scan code is a key <em>position</em>, so on a non-US host layout even
+      plain symbols like @ \ # come out wrong. Alt codes send the character itself and ignore the layout,
+      but they are Windows-only, need Num Lock on, and are about 5&times; slower.</span>
+  </label>
   <button id="tx-add-btn" onclick="addSlot('text')">Add</button>
   <button id="tx-cancel-btn" onclick="cancelEdit('text')" style="display:none;margin-left:0.4rem">Cancel</button>
   <p style="margin-top:1rem;font-size:0.8rem;color:var(--dim)"><a href="https://github.com/mykobzar/bluepass/blob/main/docs/keycodes.md" target="_blank" rel="noopener">Key code reference</a></p>
@@ -1424,8 +1434,10 @@ function modeCell(s) {
   const rm = s.replace_mode || 0;
   const mLabel = s.consumer_code ? '—' : (mm === 0 ? 'Exact' : 'Keycode');
   const rLabel = rm === 0 ? 'Replace' : 'Keep';
+  // Typing mode is only listed when it deviates from auto — keeps the column quiet
+  const sLabel = ['', 'Alt codes', 'Scan only'][s.send_mode || 0] || '';
   return `<td style="white-space:nowrap;font-size:0.8rem;color:var(--dim)">`
-    + `${mLabel}<br>${rLabel}</td>`;
+    + `${mLabel}<br>${rLabel}${sLabel ? '<br>' + sLabel : ''}</td>`;
 }
 
 function renderSlotList(id, slots, tabName) {
@@ -1464,6 +1476,8 @@ async function addSlot(tabName) {
       payload:       document.getElementById(pfx + '-payload').value,
       match_mode:    parseInt(document.getElementById(pfx + '-match-mode').value),
       replace_mode:  parseInt(document.getElementById(pfx + '-replace-mode').value),
+      // Typing mode exists on the Text tab only — passwords and TOTP stay auto
+      ...(pfx === 'tx' ? { send_mode: parseInt(document.getElementById('tx-send-mode').value) } : {}),
     }),
     headers: { 'Content-Type': 'application/json' }
   });
@@ -1496,6 +1510,7 @@ function editSlot(index, tabName) {
   document.getElementById(pfx + '-match-mode').value   = String(s.match_mode  || 0);
   document.getElementById(pfx + '-replace-mode').value = String(s.replace_mode || 0);
   document.getElementById(pfx + '-payload').value = (s.type === TYPE_TEXT) ? s.payload : '';
+  if (pfx === 'tx') document.getElementById('tx-send-mode').value = String(s.send_mode || 0);
   s_editingSlot[tabName] = index;
   document.getElementById(pfx + '-form-title').textContent    = 'Edit';
   document.getElementById(pfx + '-add-btn').textContent       = 'Save';
@@ -1514,6 +1529,7 @@ function cancelEdit(tabName) {
   document.getElementById(pfx + '-hotkey').value       = '';
   document.getElementById(pfx + '-match-mode').value   = '0';
   document.getElementById(pfx + '-replace-mode').value = '0';
+  if (pfx === 'tx') document.getElementById('tx-send-mode').value = '0';
 }
 
 // ── Security ──────────────────────────────────────────────────────────────────
