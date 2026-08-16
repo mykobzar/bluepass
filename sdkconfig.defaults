@@ -23,7 +23,10 @@ CONFIG_BT_NIMBLE_SM_LEGACY=y
 # Managed component espressif/esp_tinyusb is declared in
 # components/usb_hid_device/idf_component.yml
 CONFIG_TINYUSB_HID_COUNT=2
-CONFIG_TINYUSB_HID_BUFSIZE=64
+# No HID buffer size here on purpose: CONFIG_TINYUSB_HID_BUFSIZE is not a real
+# Kconfig symbol (the build warned "unknown kconfig symbol" and ignored it).
+# CFG_TUD_HID_EP_BUFSIZE already defaults to 64 in tinyusb's hid_device.h, which
+# is exactly what FIDO2/CTAP needs, so the line was requesting the default.
 
 # WiFi — AMPDU not needed for low-throughput config traffic
 CONFIG_ESP_WIFI_STATIC_RX_BUFFER_NUM=4
@@ -35,24 +38,25 @@ CONFIG_LWIP_SNTP_MAX_SERVERS=2
 CONFIG_LWIP_DHCP_GET_NTP_SRV=y
 
 # LwIP — tighter TCP buffers; web UI and webhooks don't need high throughput
-CONFIG_LWIP_TCP_SND_BUF_DEFAULT=2920
-CONFIG_LWIP_TCP_WND_DEFAULT=2920
+CONFIG_LWIP_TCP_SND_BUF_DEFAULT=5760
+CONFIG_LWIP_TCP_WND_DEFAULT=5760
 CONFIG_LWIP_TCP_RECVMBOX_SIZE=6
 
 # HTTP server with WebSocket (key-log streaming tab)
 CONFIG_HTTPD_MAX_REQ_HDR_LEN=1024
 CONFIG_HTTPD_MAX_URI_LEN=512
 CONFIG_HTTPD_WS_SUPPORT=y
-CONFIG_HTTPD_MAX_OPEN_SOCKETS=5
 
-# mbedTLS — SHA-1 required for TOTP HMAC-SHA1.
+# mbedTLS — SHA-1 (needed for TOTP HMAC-SHA1) needs no option here: IDF defines
+# MBEDTLS_SHA1_C unconditionally in mbedtls/port/include/mbedtls/esp_config.h.
+# CONFIG_MBEDTLS_SHA1_C used to sit below and was silently ignored as an unknown
+# Kconfig symbol — TOTP was never actually relying on it.
 # IN_CONTENT_LEN must be >= the largest server TLS record: raw.githubusercontent.com's
 # certificate chain is ~4127 B, so 4096 aborts the handshake (ESP_ERR_HTTP_CONNECT).
 # DYNAMIC_BUFFER keeps 16384 only as a ceiling and allocates RX/TX to the actual record
 # size (freed after use), so peak heap stays near the old 4 KB level — required because a
 # static 16 KB buffer exhausts heap under concurrent WiFi+BLE+USB and even api.github.com
 # then fails to connect. DYNAMIC_BUFFER auto-selects ASYMMETRIC_CONTENT_LEN.
-CONFIG_MBEDTLS_SHA1_C=y
 CONFIG_MBEDTLS_SSL_IN_CONTENT_LEN=16384
 CONFIG_MBEDTLS_SSL_OUT_CONTENT_LEN=4096
 CONFIG_MBEDTLS_DYNAMIC_BUFFER=y

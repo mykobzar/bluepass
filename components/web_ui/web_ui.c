@@ -31,6 +31,7 @@
 #include <string.h>
 #include <stdio.h>
 #include <time.h>
+#include <unistd.h>   // close() — required once cfg.close_fn owns socket teardown
 
 typedef struct { char *url; bool erase_nvs; } ota_fetch_arg_t;
 
@@ -38,25 +39,42 @@ typedef struct { char *url; bool erase_nvs; } ota_fetch_arg_t;
 #define WS_MAX_CLIENTS      5
 #define WEB_IDLE_TIMEOUT_US (5LL * 60 * 1000 * 1000)  // 5 minutes
 
-// Embedded web assets — single-file SPA built into the firmware
-extern const char index_html_start[] asm("_binary_index_html_start");
-extern const char index_html_end[]   asm("_binary_index_html_end");
+// Embedded web assets — single-file SPA, gzipped at build time (see CMakeLists)
+extern const char index_html_gz_start[] asm("_binary_index_html_gz_start");
+extern const char index_html_gz_end[]   asm("_binary_index_html_gz_end");
 
 static httpd_handle_t     s_server;
 static int                s_ws_clients[WS_MAX_CLIENTS];
 static int                s_ws_count;
 static esp_timer_handle_t s_idle_timer;
+static volatile bool      s_stopping;
 
-static void idle_stop_task(void *arg)
+static void stop_task(void *arg)
 {
-    ESP_LOGI(TAG, "idle timeout — stopping web UI");
     web_ui_stop();
+    s_stopping = false;
     vTaskDelete(NULL);
+}
+
+// httpd_stop() busy-waits until the server thread leaves its current handler,
+// so it blocks for as long as the slowest in-flight transfer — on a weak link
+// that is tens of seconds. Callers that must stay responsive (the button task,
+// an esp_timer callback) have to go through this instead of web_ui_stop().
+esp_err_t web_ui_stop_async(void)
+{
+    if (!s_server || s_stopping) return ESP_OK;
+    s_stopping = true;
+    if (xTaskCreate(stop_task, "web_stop", 2048, NULL, 4, NULL) != pdPASS) {
+        s_stopping = false;
+        return ESP_FAIL;
+    }
+    return ESP_OK;
 }
 
 static void idle_timer_cb(void *arg)
 {
-    xTaskCreate(idle_stop_task, "web_idle", 2048, NULL, 4, NULL);
+    ESP_LOGI(TAG, "idle timeout — stopping web UI");
+    web_ui_stop_async();
 }
 
 static void bump_idle_timer(void)
@@ -68,14 +86,23 @@ static void bump_idle_timer(void)
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
-static esp_err_t send_json(httpd_req_t *req, cJSON *root)
+// bump=false is for endpoints the UI polls on a timer in the background. Those
+// must not keep the web UI alive: the idle timeout is the second half of the
+// button's security gate, and a poll would hold the whole config surface open
+// for as long as a browser tab stays open on the page.
+static esp_err_t send_json_ex(httpd_req_t *req, cJSON *root, bool bump)
 {
-    bump_idle_timer();
+    if (bump) bump_idle_timer();
     char *body = cJSON_PrintUnformatted(root);
     httpd_resp_set_type(req, "application/json");
     httpd_resp_sendstr(req, body);
     free(body);
     return ESP_OK;
+}
+
+static esp_err_t send_json(httpd_req_t *req, cJSON *root)
+{
+    return send_json_ex(req, root, true);
 }
 
 static esp_err_t send_ok(httpd_req_t *req)
@@ -93,8 +120,11 @@ static esp_err_t handler_index(httpd_req_t *req)
 {
     bump_idle_timer();
     httpd_resp_set_type(req, "text/html");
-    httpd_resp_send(req, index_html_start,
-                    (ssize_t)(index_html_end - index_html_start));
+    // Served gzipped unconditionally — the uncompressed page is not in flash.
+    // Every browser advertises gzip; command-line clients need --compressed.
+    httpd_resp_set_hdr(req, "Content-Encoding", "gzip");
+    httpd_resp_send(req, index_html_gz_start,
+                    (ssize_t)(index_html_gz_end - index_html_gz_start));
     return ESP_OK;
 }
 
@@ -147,11 +177,34 @@ void web_ui_push_key_event(const key_event_t *event, void *ctx)
         .len     = strlen(buf),
     };
     for (int i = s_ws_count - 1; i >= 0; i--) {
-        if (httpd_ws_send_frame_async(s_server, s_ws_clients[i], &frame) != ESP_OK) {
+        // Never send blind: httpd_ws_send_frame_async() only checks that *a*
+        // session owns the fd, not that it speaks WebSocket. httpd recycles
+        // descriptors (lru_purge_enable), so a closed WS client's fd can be
+        // handed to a plain HTTP connection — writing there would splice a
+        // binary frame into the middle of an HTTP response, and the send would
+        // succeed, so the stale entry would never be evicted. This check also
+        // makes the list safe to read while close_fn compacts it concurrently.
+        if (httpd_ws_get_fd_info(s_server, s_ws_clients[i]) != HTTPD_WS_CLIENT_WEBSOCKET
+            || httpd_ws_send_frame_async(s_server, s_ws_clients[i], &frame) != ESP_OK) {
             // Client gone — compact list
             s_ws_clients[i] = s_ws_clients[--s_ws_count];
         }
     }
+}
+
+// Registered as cfg.close_fn so the fd leaves the broadcast list the moment its
+// socket dies, instead of lingering until a send happens to fail. Once close_fn
+// is set the server no longer closes the socket itself — that is now our job.
+static void on_sock_close(httpd_handle_t hd, int fd)
+{
+    (void)hd;
+    for (int i = 0; i < s_ws_count; i++) {
+        if (s_ws_clients[i] == fd) {
+            s_ws_clients[i] = s_ws_clients[--s_ws_count];
+            break;
+        }
+    }
+    close(fd);
 }
 
 // ── Hotkey slots API ─────────────────────────────────────────────────────────
@@ -612,7 +665,7 @@ static esp_err_t handler_time_get(httpd_req_t *req)
     cJSON_AddNumberToObject(obj, "epoch", (double)now);
     cJSON_AddBoolToObject(obj,   "synced", synced);
     cJSON_AddNumberToObject(obj, "uptime", (double)(esp_timer_get_time() / 1000000LL));
-    send_json(req, obj);
+    send_json_ex(req, obj, false);   // background poll — must not hold the UI open
     cJSON_Delete(obj);
     return ESP_OK;
 }
@@ -699,7 +752,7 @@ static esp_err_t handler_board_set(httpd_req_t *req)
 static esp_err_t handler_logout(httpd_req_t *req)
 {
     send_ok(req);
-    xTaskCreate(idle_stop_task, "logout", 2048, NULL, 4, NULL);
+    web_ui_stop_async();
     return ESP_OK;
 }
 
@@ -1453,6 +1506,15 @@ esp_err_t web_ui_start(void)
     cfg.send_wait_timeout = 30;
     cfg.lru_purge_enable  = true;   // recycle the oldest idle connection instead of hoarding
                                     // sockets — leaves a socket free for outbound HTTPS (OTA)
+    cfg.close_fn          = on_sock_close;   // evict dead fds from the WS broadcast list
+    // A browser opens up to 6 parallel connections plus the persistent /ws, so
+    // the IDF default of 7 sits exactly at the limit and lru_purge starts
+    // recycling live connections mid-page-load. 8 leaves one spare. Budget:
+    // httpd takes max_open_sockets + listener + ctrl = 10 of LWIP's 16, leaving
+    // room for MQTT and the outbound HTTPS used by OTA.
+    // (sdkconfig.defaults used to carry CONFIG_HTTPD_MAX_OPEN_SOCKETS, which is
+    //  not a real Kconfig symbol — this is a runtime field, not a build option.)
+    cfg.max_open_sockets  = 8;
 
     ESP_RETURN_ON_ERROR(httpd_start(&s_server, &cfg), TAG, "httpd start failed");
 

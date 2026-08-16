@@ -79,16 +79,33 @@ static void on_usb_report(const bluepass_hid_report_t *report, void *ctx)
 
 // ── Button handling ───────────────────────────────────────────────────────────
 
+#define BTN_EVT_SHORT (1U << 0)
+#define BTN_EVT_LONG  (1U << 1)
+
 static void btn_task(void *arg)
 {
     for (;;) {
-        ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+        uint32_t evt = 0;
+        xTaskNotifyWait(0, UINT32_MAX, &evt, portMAX_DELAY);
+
+        if (evt & BTN_EVT_LONG) {
+            ESP_LOGI(TAG, "long press — resetting WiFi credentials");
+            storage_clear_wifi_creds();
+            wifi_manager_start_ap();
+            web_ui_start();
+            continue;
+        }
+        if (!(evt & BTN_EVT_SHORT)) continue;
+
         if (fido2_pending_up()) {
             fido2_confirm_up();
             ESP_LOGI(TAG, "FIDO2 UP confirmed via button");
         } else if (web_ui_is_running()) {
-            web_ui_stop();
-            ESP_LOGI(TAG, "web UI stopped");
+            // Async: web_ui_stop() blocks until the HTTP server drains its
+            // current transfer, which would freeze this task — and with it
+            // every further button press — for tens of seconds on a weak link.
+            web_ui_stop_async();
+            ESP_LOGI(TAG, "web UI stopping");
         } else {
             web_ui_start();
             ESP_LOGI(TAG, "web UI started");
@@ -96,12 +113,12 @@ static void btn_task(void *arg)
     }
 }
 
+// Runs in the esp_timer task, which also drives the jiggler, the BLE
+// auto-reconnect and the poll timer — so it must not block. Hand the work to
+// btn_task and return immediately.
 static void btn_long_press_cb(void *arg)
 {
-    ESP_LOGI(TAG, "long press — resetting WiFi credentials");
-    storage_clear_wifi_creds();
-    wifi_manager_start_ap();
-    web_ui_start();
+    xTaskNotify(s_btn_task, BTN_EVT_LONG, eSetBits);
 }
 
 static void IRAM_ATTR btn_isr(void *arg)
@@ -117,7 +134,7 @@ static void IRAM_ATTR btn_isr(void *arg)
         int64_t held_us = now - s_btn_press_us;
         if (held_us < LONG_PRESS_US) {
             BaseType_t woken = pdFALSE;
-            vTaskNotifyGiveFromISR(s_btn_task, &woken);
+            xTaskNotifyFromISR(s_btn_task, BTN_EVT_SHORT, eSetBits, &woken);
             portYIELD_FROM_ISR(woken);
         }
     }
@@ -160,7 +177,9 @@ void app_main(void)
     storage_get_board_config(&board);
     s_btn_gpio = (gpio_num_t)board.btn_gpio;
 
-    xTaskCreate(btn_task, "btn", 4096, NULL, 5, &s_btn_task);
+    // 6 KB: this task now also runs the long-press path (NVS erase + WiFi AP
+    // bring-up), which used to sit in the esp_timer callback.
+    xTaskCreate(btn_task, "btn", 6144, NULL, 5, &s_btn_task);
     gpio_init();
 
     // Read connection mode and configure accordingly
