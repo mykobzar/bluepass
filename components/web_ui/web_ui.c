@@ -32,7 +32,8 @@
 #include <string.h>
 #include <stdio.h>
 #include <time.h>
-#include <unistd.h>   // close() — required once cfg.close_fn owns socket teardown
+#include <unistd.h>       // close() — required once cfg.close_fn owns socket teardown
+#include <sys/socket.h>   // socket() — used to count free LWIP descriptors
 
 typedef struct { char *url; bool erase_nvs; } ota_fetch_arg_t;
 
@@ -920,6 +921,25 @@ done:
     vTaskDelete(NULL);
 }
 
+// LWIP exposes no "how many descriptors are left" call, so take them all and
+// count. This is the one number that separates "the link dropped" from "the web
+// server has eaten every socket" — the failure mode that took v2.1.2 through
+// v2.1.6 to identify. It does hold every free descriptor for the microseconds it
+// takes to close them again, so it belongs only on the manual update-check path,
+// never anywhere periodic.
+static int count_free_sockets(void)
+{
+    int fds[CONFIG_LWIP_MAX_SOCKETS];
+    int n = 0;
+    while (n < (int)(sizeof(fds) / sizeof(fds[0]))) {
+        int s = socket(AF_INET, SOCK_STREAM, 0);
+        if (s < 0) break;
+        fds[n++] = s;
+    }
+    for (int i = 0; i < n; i++) close(fds[i]);
+    return n;
+}
+
 // GET /api/ota/check — device queries GitHub tags and returns {latest, url} or {error}
 static esp_err_t handler_ota_check(httpd_req_t *req)
 {
@@ -946,9 +966,16 @@ static esp_err_t handler_ota_check(httpd_req_t *req)
     // masks as a generic ESP_ERR_HTTP_CONNECT) can be attributed to heap vs. TLS/DNS.
     size_t heap_free = esp_get_free_heap_size();
     size_t heap_blk  = heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+    int    sock_free = count_free_sockets();
 
     esp_err_t oerr = esp_http_client_open(client, 0);
     if (oerr != ESP_OK) {
+        // Read the client's own socket errno BEFORE cleanup: EMFILE/ENFILE here
+        // means the descriptors ran out, which no amount of staring at the
+        // network will reveal. The probe below runs after cleanup has already
+        // handed the client's resources back, so it cannot observe a shortage —
+        // it answers "does the link work a second later", nothing more.
+        int cerrno = esp_http_client_get_errno(client);
         esp_http_client_cleanup(client);
 
         // esp_http_client collapses every transport failure into ESP_ERR_HTTP_CONNECT.
@@ -967,10 +994,12 @@ static esp_err_t handler_ota_check(httpd_req_t *req)
             esp_tls_conn_destroy(probe);
         }
 
-        char msg[256];
+        char msg[288];
         snprintf(msg, sizeof(msg),
-                 "{\"error\":\"connect failed: %s | tls_last=%s tls_code=-0x%04X flags=0x%X | heap=%u largest=%u\"}",
-                 esp_err_to_name(oerr), esp_err_to_name(tls_last),
+                 "{\"error\":\"connect failed: %s | errno=%d sockets_free=%d | "
+                 "probe=%s tls_code=-0x%04X flags=0x%X | heap=%u largest=%u\"}",
+                 esp_err_to_name(oerr), cerrno, sock_free,
+                 esp_err_to_name(tls_last),
                  (unsigned)((-tls_code) & 0xFFFF), (unsigned)tls_flags,
                  (unsigned)heap_free, (unsigned)heap_blk);
         httpd_resp_sendstr(req, msg);
@@ -1518,14 +1547,16 @@ esp_err_t web_ui_start(void)
     cfg.lru_purge_enable  = true;   // recycle the oldest idle connection instead of hoarding
                                     // sockets — leaves a socket free for outbound HTTPS (OTA)
     cfg.close_fn          = on_sock_close;   // evict dead fds from the WS broadcast list
-    // A browser opens up to 6 parallel connections plus the persistent /ws, so
-    // the IDF default of 7 sits exactly at the limit and lru_purge starts
-    // recycling live connections mid-page-load. 8 leaves one spare. Budget:
-    // httpd takes max_open_sockets + listener + ctrl = 10 of LWIP's 16, leaving
-    // room for MQTT and the outbound HTTPS used by OTA.
+    // Deliberately left at the IDF default rather than raised. httpd consumes
+    // max_open_sockets + a listener + a control socket out of LWIP's 16, and the
+    // outbound HTTPS that OTA needs must still find a free one — that starvation
+    // was the actual v2.1.6 bug. 2.1.10 tried 8 to stop lru_purge recycling live
+    // connections during a page load, but the real cause of those stalls turned
+    // out to be WiFi modem sleep, and the page is gzipped to ~24 KB now, so the
+    // extra socket bought nothing and only ate OTA's margin.
     // (sdkconfig.defaults used to carry CONFIG_HTTPD_MAX_OPEN_SOCKETS, which is
     //  not a real Kconfig symbol — this is a runtime field, not a build option.)
-    cfg.max_open_sockets  = 8;
+    cfg.max_open_sockets  = 7;
 
     ESP_RETURN_ON_ERROR(httpd_start(&s_server, &cfg), TAG, "httpd start failed");
 
