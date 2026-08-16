@@ -10,7 +10,7 @@ typedef struct {
     esp_err_t (*send_report)  (const hid_keyboard_report_t *report);
     esp_err_t (*send_consumer)(uint16_t usage_id);
     esp_err_t (*send_release) (void);
-    esp_err_t (*type_string)  (const char *str);
+    esp_err_t (*type_string)  (const char *str, uint8_t mode);  // mode: hid_text_mode_t
     bool      (*is_ready)     (void);
 } hid_output_ops_t;
 

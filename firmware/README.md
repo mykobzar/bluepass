@@ -10,6 +10,7 @@ After flashing, use **Settings → Board** to configure the correct GPIO pins fo
 
 | Version | Date | Notes |
 |---|---|---|
+| **2.1.11** | 2026-08-16 | (1) The WiFi radio no longer sleeps while the web interface is running. IDF's default modem sleep parks the station between DTIM beacons; measured on a weak link (RSSI −90) that meant ICMP payloads of 150 B losing 50% and 200 B losing 100%, so page loads never completed while small JSON replies still got through. With the radio held awake, every size from 56 B to 1400 B ran at 0% loss and the page went from never loading in 50 s to 10/10 loads at ~0.15 s. Normal power saving is restored when the interface closes; the board is USB-powered, so the milliamps cost nothing. (2) Text substitutions gain a per-slot **typing mode**: Auto (unchanged default), Alt codes only — every character via Alt+numpad, immune to the host's keyboard layout — and Scan codes only, for macOS/Linux hosts where Alt+numpad does not exist. A scan code is a key position, so on a non-US layout even plain ASCII like `@ \ #` arrived wrong. Passwords and TOTP stay on Auto. |
 | **2.1.10** | 2026-08-16 | Web UI responsiveness and the dead-button bug. Root cause: `esp_http_server` runs a single thread, so sending the ~103 KB uncompressed SPA monopolised it for the whole transfer — on a weak link every other request queued behind it, and `btn_task` calling the blocking `httpd_stop()` froze the button for just as long. Fixes: (1) the page is gzipped at build time, 105 733 → 24 162 B; (2) new `web_ui_stop_async()` used by the button, idle timer and `/api/logout`; (3) WebSocket broadcasts verify `httpd_ws_get_fd_info()` and a `close_fn` evicts dead fds — a recycled fd could otherwise splice a WS frame into an HTTP response; (4) TCP window 2920 → 5760; (5) `/api/time` no longer extends the idle timeout, so a browser tab left open can no longer hold the config surface open indefinitely; (6) long-press work moved out of the esp_timer callback into `btn_task`; (7) `cfg.max_open_sockets = 8` and three dead Kconfig lines removed. Also persists BLE bonds across reboots (`CONFIG_BT_NIMBLE_NVS_PERSIST`), so a power cycle no longer forces a re-pairing. |
 | **2.1.9** | 2026-08-16 | (1) Non-ASCII text (umlauts, accents, symbols) is now typed on Windows hosts via the Alt+numpad CP1252 escape, so characters the HID keyboard layout cannot reach are sent correctly. (2) Info tab shows device date/time (UTC) and uptime at the bottom; `GET /api/time` gained an `uptime` field. |
 | **2.1.8** | 2026-07-21 | Fix the real cause of duplicate key-log lines: `handler_ws` added the client socket fd to the broadcast list on every WebSocket handshake without checking for duplicates. httpd reuses fds across reconnects/reloads, so each reopen of the web UI re-registered the same live socket → one keypress broadcast N times to the same browser (capped at `WS_MAX_CLIENTS=5` → 5 lines). Dedup the fd on registration. (Not a BLE issue; the 2.1.7 hotkey report-dedup is kept as a safety net against double substitution.) |
@@ -56,9 +57,31 @@ After flashing, use **Settings → Board** to configure the correct GPIO pins fo
 
 ---
 
-## Files — v2.1.10
+## Files — v2.1.11
 
 Two variants are available.  Use the **standard** variant for a normal install.  Use the **encrypted** variant if you want hardware-level AES-XTS flash encryption.
+
+### Standard (no encryption)
+
+| File | Flash address | Description |
+|---|---|---|
+| `bootloader-2.1.11.bin` | `0x0` | Second-stage bootloader |
+| `partition-table-2.1.11.bin` | `0x8000` | Partition layout (NVS + dual OTA slots) |
+| `ota_data_initial-2.1.11.bin` | `0x10000` | OTA slot selector (initial state) |
+| `bluepass-2.1.11.bin` | `0x20000` | Main application |
+
+### With flash encryption (recommended)
+
+| File | Flash address | Description |
+|---|---|---|
+| `bootloader-2.1.11-enc.bin` | `0x0` | Bootloader with encryption support |
+| `partition-table-2.1.11-enc.bin` | `0x8000` | Partition layout |
+| `ota_data_initial-2.1.11-enc.bin` | `0x10000` | OTA slot selector |
+| `bluepass-2.1.11-enc.bin` | `0x20000` | Main application (encryption-enabled build) |
+
+---
+
+## Files — v2.1.10 (previous stable)
 
 ### Standard (no encryption)
 
@@ -69,7 +92,7 @@ Two variants are available.  Use the **standard** variant for a normal install. 
 | `ota_data_initial-2.1.10.bin` | `0x10000` | OTA slot selector (initial state) |
 | `bluepass-2.1.10.bin` | `0x20000` | Main application |
 
-### With flash encryption (recommended)
+### With flash encryption
 
 | File | Flash address | Description |
 |---|---|---|
@@ -77,28 +100,6 @@ Two variants are available.  Use the **standard** variant for a normal install. 
 | `partition-table-2.1.10-enc.bin` | `0x8000` | Partition layout |
 | `ota_data_initial-2.1.10-enc.bin` | `0x10000` | OTA slot selector |
 | `bluepass-2.1.10-enc.bin` | `0x20000` | Main application (encryption-enabled build) |
-
----
-
-## Files — v2.1.9 (previous stable)
-
-### Standard (no encryption)
-
-| File | Flash address | Description |
-|---|---|---|
-| `bootloader-2.1.9.bin` | `0x0` | Second-stage bootloader |
-| `partition-table-2.1.9.bin` | `0x8000` | Partition layout (NVS + dual OTA slots) |
-| `ota_data_initial-2.1.9.bin` | `0x10000` | OTA slot selector (initial state) |
-| `bluepass-2.1.9.bin` | `0x20000` | Main application |
-
-### With flash encryption
-
-| File | Flash address | Description |
-|---|---|---|
-| `bootloader-2.1.9-enc.bin` | `0x0` | Bootloader with encryption support |
-| `partition-table-2.1.9-enc.bin` | `0x8000` | Partition layout |
-| `ota_data_initial-2.1.9-enc.bin` | `0x10000` | OTA slot selector |
-| `bluepass-2.1.9-enc.bin` | `0x20000` | Main application (encryption-enabled build) |
 
 ---
 
@@ -208,10 +209,10 @@ esptool.py \
   --flash_mode dio \
   --flash_freq 80m \
   --flash_size 4MB \
-  0x0     bootloader-2.1.10.bin \
-  0x8000  partition-table-2.1.10.bin \
-  0x10000 ota_data_initial-2.1.10.bin \
-  0x20000 bluepass-2.1.10.bin
+  0x0     bootloader-2.1.11.bin \
+  0x8000  partition-table-2.1.11.bin \
+  0x10000 ota_data_initial-2.1.11.bin \
+  0x20000 bluepass-2.1.11.bin
 ```
 
 ### With flash encryption (recommended, advanced)
@@ -229,10 +230,10 @@ esptool.py \
   --flash_mode dio \
   --flash_freq 80m \
   --flash_size 4MB \
-  0x0     bootloader-2.1.10-enc.bin \
-  0x8000  partition-table-2.1.10-enc.bin \
-  0x10000 ota_data_initial-2.1.10-enc.bin \
-  0x20000 bluepass-2.1.10-enc.bin
+  0x0     bootloader-2.1.11-enc.bin \
+  0x8000  partition-table-2.1.11-enc.bin \
+  0x10000 ota_data_initial-2.1.11-enc.bin \
+  0x20000 bluepass-2.1.11-enc.bin
 ```
 
 After flashing, the bootloader generates an AES-XTS key, burns it into eFuse, and reboots into Development mode automatically.
@@ -268,10 +269,10 @@ esptool.py ^
   --flash_mode dio ^
   --flash_freq 80m ^
   --flash_size 4MB ^
-  0x0     bootloader-2.1.10.bin ^
-  0x8000  partition-table-2.1.10.bin ^
-  0x10000 ota_data_initial-2.1.10.bin ^
-  0x20000 bluepass-2.1.10.bin
+  0x0     bootloader-2.1.11.bin ^
+  0x8000  partition-table-2.1.11.bin ^
+  0x10000 ota_data_initial-2.1.11.bin ^
+  0x20000 bluepass-2.1.11.bin
 ```
 
 Replace `COM3` with your actual port number.  
@@ -288,10 +289,10 @@ For the encrypted variant use the `-enc` filenames (see Linux/macOS section abov
 
    | File | Address |
    |---|---|
-   | `bootloader-2.1.10.bin` | `0x0` |
-   | `partition-table-2.1.10.bin` | `0x8000` |
-   | `ota_data_initial-2.1.10.bin` | `0x10000` |
-   | `bluepass-2.1.10.bin` | `0x20000` |
+   | `bootloader-2.1.11.bin` | `0x0` |
+   | `partition-table-2.1.11.bin` | `0x8000` |
+   | `ota_data_initial-2.1.11.bin` | `0x10000` |
+   | `bluepass-2.1.11.bin` | `0x20000` |
 
 5. Set **COM** to your port, **BAUD** to `460800`.
 6. Set **SPI SPEED: 80 MHz**, **SPI MODE: DIO**, **FLASH SIZE: 4MB**.

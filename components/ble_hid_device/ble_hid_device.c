@@ -453,7 +453,10 @@ static void type_alt_numpad(uint8_t b)
     vTaskDelay(pdMS_TO_TICKS(TYPE_INTER_KEY_MS));
 }
 
-esp_err_t ble_hid_device_type_string(const char *str)
+// mode is hid_text_mode_t. Note there is no Num Lock handling here: the BLE HID
+// profile exposes no LED output characteristic, so Alt+numpad modes require the
+// host to already have Num Lock on.
+esp_err_t ble_hid_device_type_string(const char *str, uint8_t mode)
 {
     const uint8_t *p = (const uint8_t *)str;
     uint32_t cp;
@@ -467,7 +470,11 @@ esp_err_t ble_hid_device_type_string(const char *str)
             continue;
         }
 
-        if (cp >= 0x20 && cp <= 0x7E) {
+        if (cp < 0x20) continue;   // other control characters — nothing to type
+
+        // Alt mode routes ASCII through the numpad too — a scan code is a key
+        // position, so on a non-US host layout even plain symbols land wrong.
+        if (cp <= 0x7E && mode != HID_TEXT_MODE_ALT) {
             uint8_t kc  = s_ascii_map[cp - 0x20].kc;
             uint8_t mod = s_ascii_map[cp - 0x20].mod;
             hid_keyboard_report_t r = {.modifier = mod, .keycode = {kc}};
@@ -478,7 +485,10 @@ esp_err_t ble_hid_device_type_string(const char *str)
             continue;
         }
 
-        if (cp < 0x20) continue;   // other control characters — nothing to type
+        if (mode == HID_TEXT_MODE_SCAN) {
+            ESP_LOGW(TAG, "U+%04"PRIX32" needs Alt+numpad — skipped (scan-code mode)", cp);
+            continue;
+        }
 
         int b = hid_cp1252_from_codepoint(cp);
         if (b < 0) {

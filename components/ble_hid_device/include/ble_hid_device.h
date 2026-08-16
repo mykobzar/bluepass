@@ -24,7 +24,7 @@ esp_err_t ble_hid_device_send_consumer(uint16_t usage_id);
 esp_err_t ble_hid_device_send_release(void);
 
 // Type a UTF-8 string by synthesising key events (same semantics as usb_hid_device)
-esp_err_t ble_hid_device_type_string(const char *str);
+esp_err_t ble_hid_device_type_string(const char *str, uint8_t mode);  // mode: hid_text_mode_t
 
 bool ble_hid_device_is_connected(void);
 bool ble_hid_device_is_advertising(void);

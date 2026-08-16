@@ -2,7 +2,7 @@
 
 > A $2 no-solder gadget that gives any keyboard superpowers: type any password or authenticator code with one key, authenticate with a hardware security key, connect any keyboard to any device, keep the screen awake, trigger smart-home automations — no software on the host, nothing installed, nothing changed. Firmware for ESP32-S3.
 
-![Version](https://img.shields.io/badge/version-2.1.10-blue)
+![Version](https://img.shields.io/badge/version-2.1.11-blue)
 ![ESP-IDF](https://img.shields.io/badge/ESP--IDF-v5.2%2B-blue)
 ![Target](https://img.shields.io/badge/target-ESP32--S3-informational)
 ![USB](https://img.shields.io/badge/Interface-USB-blue?style=flat-square&logo=usb&logoColor=white)
@@ -64,7 +64,7 @@ In all modes, configured hotkey combinations are intercepted and replaced with:
 | Substitution | Description |
 |---|---|
 | **Password** | Stored secret typed as keystrokes; never exposed over the API |
-| **Text** | Arbitrary string, including characters the physical keyboard cannot produce |
+| **Text** | Arbitrary string, including characters the physical keyboard cannot produce; per-slot typing mode makes it immune to the host's keyboard layout |
 | **Authenticator code** | Live 6-digit TOTP one-time code — works with Google Authenticator, Microsoft Authenticator, Authy, Apple Passwords, and any TOTP-compatible app |
 | **Jiggler** | Toggles periodic keypresses to prevent the laptop from sleeping |
 | **Webhook** | Sends an HTTP GET request to a configured URL when a hotkey is pressed |
@@ -179,18 +179,18 @@ Flash (replace the port with yours):
 # Linux / macOS
 esptool.py --chip esp32s3 --port /dev/ttyUSB0 --baud 460800 write_flash \
   --flash_mode dio --flash_freq 80m --flash_size 4MB \
-  0x0     firmware/bootloader-2.1.10.bin \
-  0x8000  firmware/partition-table-2.1.10.bin \
-  0x10000 firmware/ota_data_initial-2.1.10.bin \
-  0x20000 firmware/bluepass-2.1.10.bin
+  0x0     firmware/bootloader-2.1.11.bin \
+  0x8000  firmware/partition-table-2.1.11.bin \
+  0x10000 firmware/ota_data_initial-2.1.11.bin \
+  0x20000 firmware/bluepass-2.1.11.bin
 
 # Windows — use COM3, COM4, etc.
 esptool.py --chip esp32s3 --port COM3 --baud 460800 write_flash ^
   --flash_mode dio --flash_freq 80m --flash_size 4MB ^
-  0x0     firmware\bootloader-2.1.10.bin ^
-  0x8000  firmware\partition-table-2.1.10.bin ^
-  0x10000 firmware\ota_data_initial-2.1.10.bin ^
-  0x20000 firmware\bluepass-2.1.10.bin
+  0x0     firmware\bootloader-2.1.11.bin ^
+  0x8000  firmware\partition-table-2.1.11.bin ^
+  0x10000 firmware\ota_data_initial-2.1.11.bin ^
+  0x20000 firmware\bluepass-2.1.11.bin
 ```
 
 > **Windows GUI option:** see [`firmware/README.md`](firmware/README.md) for step-by-step instructions using the Espressif Flash Download Tool (no Python required).
@@ -353,11 +353,13 @@ The web interface **turns off automatically after 5 minutes of inactivity** (no 
 
 The interface is divided into five top-level sections. **Hotkeys** and **Settings** each reveal a submenu when selected.
 
+While the interface is running, the device keeps its WiFi radio awake instead of sleeping between beacons, and it shuts the radio back down to normal power saving when the interface is closed. This costs a few milliamps — the device is USB-powered anyway — and removes the latency spikes and packet loss that otherwise make the page slow to load on a weak signal.
+
 ### Main navigation
 
 | Section | Description |
 |---|---|
-| **Info** | WiFi and Bluetooth connection status with signal strength; live key log |
+| **Info** | WiFi and Bluetooth connection status with signal strength; live key log; device date/time and uptime |
 | **Connection** | Connection mode selector (BT-USB / BT-BT / USB-BT); Bluetooth keyboard scan and pair; BLE diagnostic log |
 | **Hotkeys** | All hotkey-based actions (see below) |
 | **Passkey** | Confirm-key assignment for FIDO2 user-presence (shown only when FIDO2 is enabled in Settings) |
@@ -431,6 +433,20 @@ Assign a hotkey to a stored password. When the hotkey is pressed on the Bluetoot
 
 Same as passwords but the stored text is visible in the UI. Supports any printable ASCII character and newline. Useful for text snippets, signatures, or characters the physical keyboard layout cannot produce.
 
+**Typing mode** — how the characters reach the host. A scan code is a key *position*, not a character, so on a host that is not using a US layout even plain ASCII arrives wrong: `@ " # \ | ~` move around, and a QWERTZ layout swaps Y and Z. Alt+numpad sends the character code itself and is therefore layout-independent.
+
+| Mode | Behaviour |
+|---|---|
+| Auto (default) | ASCII as scan codes, anything else via Alt+numpad |
+| Alt codes only | Every printable character via Alt+numpad — immune to the host layout |
+| Scan codes only | Alt+numpad is never used; characters outside ASCII are skipped |
+
+Pick **Alt codes only** when the host runs a non-US keyboard layout. Pick **Scan codes only** for macOS and Linux hosts, where Alt+numpad does not exist at all and the Auto mode would produce garbage the moment it meets a special character.
+
+Alt+numpad has three limits worth knowing: it is a **Windows** mechanism, it needs **Num Lock on** (over USB the device reads the host's LED state and toggles it for the duration of the string; in BT-BT mode the BLE profile has no LED characteristic, so Num Lock must already be on), and it costs five keystrokes per character, so long strings type noticeably slower. Characters outside CP1252 — Cyrillic, CJK, emoji — cannot be sent by any mode.
+
+The mode is stored per slot and applies to text substitutions only. Passwords and TOTP codes always use Auto.
+
 ### Authenticator app codes
 
 bluepass generates standard TOTP codes (RFC 6238) — the same algorithm used by Google Authenticator, Microsoft Authenticator, Authy, Apple Passwords (iOS 17+ / macOS Sonoma), Bitwarden, 1Password, and any other TOTP-compatible app. If a service offers a QR code for "Google Authenticator", it works with bluepass.
@@ -498,7 +514,7 @@ Each hotkey slot has two independent mode selectors:
 | Replace all (default) | Substitution is sent with no modifiers held |
 | Keep modifiers | Modifiers active at trigger time are preserved and re-sent after typing |
 
-Each slot row in the Text, Passwords, and Authenticator tables shows the current mode as compact labels (`M:exact / M:any`, `R:send / R:keep`). Modes can be changed directly in the Add / Edit form without touching the slot content.
+Each slot row in the Text, Passwords, and Authenticator tables shows the current modes as compact labels in the **Mode** column (`Exact` / `Keycode`, then `Replace` / `Keep`). Text slots add a third line — `Alt codes` or `Scan only` — but only when the typing mode differs from Auto. Modes can be changed directly in the Add / Edit form without touching the slot content.
 
 ### Editing existing slots
 
