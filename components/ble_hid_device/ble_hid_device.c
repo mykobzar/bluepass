@@ -453,6 +453,23 @@ static void type_alt_numpad(uint8_t b)
     vTaskDelay(pdMS_TO_TICKS(TYPE_INTER_KEY_MS));
 }
 
+// Windows hex entry — see the USB implementation for the details and caveats.
+static void type_alt_hex(uint32_t cp)
+{
+    tap_key(HID_MOD_L_ALT, HID_KEY_KEYPAD_ADD);
+
+    char hex[8];
+    int  n = snprintf(hex, sizeof(hex), "%X", (unsigned)cp);
+    for (int i = 0; i < n; i++) {
+        uint8_t kc = (hex[i] <= '9') ? s_kp_digit[hex[i] - '0']
+                                     : (uint8_t)(HID_KEY_A + (hex[i] - 'A'));
+        tap_key(HID_MOD_L_ALT, kc);
+    }
+
+    ble_hid_device_send_release();   // Alt up → character is delivered
+    vTaskDelay(pdMS_TO_TICKS(TYPE_INTER_KEY_MS));
+}
+
 // mode is hid_text_mode_t. Note there is no Num Lock handling here: the BLE HID
 // profile exposes no LED output characteristic, so Alt+numpad modes require the
 // host to already have Num Lock on.
@@ -471,6 +488,11 @@ esp_err_t ble_hid_device_type_string(const char *str, uint8_t mode)
         }
 
         if (cp < 0x20) continue;   // other control characters — nothing to type
+
+        if (mode == HID_TEXT_MODE_ALT_HEX) {
+            type_alt_hex(cp);
+            continue;
+        }
 
         // Alt mode routes ASCII through the numpad too — a scan code is a key
         // position, so on a non-US host layout even plain symbols land wrong.

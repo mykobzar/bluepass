@@ -216,13 +216,13 @@
   </label>
   <label>Typing mode
     <select id="tx-send-mode">
-      <option value="0">Auto — scan codes, Alt codes for special characters</option>
-      <option value="1">Alt codes only — layout-independent (Windows)</option>
-      <option value="2">Scan codes only — skips special characters</option>
+      <option value="0">Auto</option>
+      <option value="1">Alt codes — decimal (Windows)</option>
+      <option value="3">Alt codes — hex Unicode (Windows)</option>
+      <option value="2">Scan codes only</option>
     </select>
-    <span class="hotkey-hint">A scan code is a key <em>position</em>, so on a non-US host layout even
-      plain symbols like @ \ # come out wrong. Alt codes send the character itself and ignore the layout,
-      but they are Windows-only, need Num Lock on, and are about 5&times; slower.</span>
+    <span class="hotkey-hint">Pick a mode when the target computer uses a non-US keyboard layout &mdash;
+      <a href="https://github.com/mykobzar/bluepass#text-substitutions" target="_blank" rel="noopener">which one and why</a>.</span>
   </label>
   <button id="tx-add-btn" onclick="addSlot('text')">Add</button>
   <button id="tx-cancel-btn" onclick="cancelEdit('text')" style="display:none;margin-left:0.4rem">Cancel</button>
@@ -512,10 +512,10 @@
         </div>
         <code style="display:block;background:#111;padding:0.5rem 0.7rem;border-radius:3px;font-size:0.8rem;line-height:1.7;color:var(--blue);white-space:pre-wrap">esptool.py --chip esp32s3 --port /dev/ttyUSB0 --baud 460800 write_flash \
   --flash_mode dio --flash_freq 80m --flash_size 4MB \
-  0x0     bootloader-2.1.11-enc.bin \
-  0x8000  partition-table-2.1.11-enc.bin \
-  0x10000 ota_data_initial-2.1.11-enc.bin \
-  0x20000 bluepass-2.1.11-enc.bin</code>
+  0x0     bootloader-2.1.12-enc.bin \
+  0x8000  partition-table-2.1.12-enc.bin \
+  0x10000 ota_data_initial-2.1.12-enc.bin \
+  0x20000 bluepass-2.1.12-enc.bin</code>
         <div style="color:var(--dim);font-size:0.82rem;margin-top:0.5rem">
           Replace <code>/dev/ttyUSB0</code> with your actual serial port. On Windows use <code>COM3</code> (or whichever COMx appears in Device Manager).
         </div>
@@ -1435,7 +1435,7 @@ function modeCell(s) {
   const mLabel = s.consumer_code ? '—' : (mm === 0 ? 'Exact' : 'Keycode');
   const rLabel = rm === 0 ? 'Replace' : 'Keep';
   // Typing mode is only listed when it deviates from auto — keeps the column quiet
-  const sLabel = ['', 'Alt codes', 'Scan only'][s.send_mode || 0] || '';
+  const sLabel = ['', 'Alt dec', 'Scan only', 'Alt hex'][s.send_mode || 0] || '';
   return `<td style="white-space:nowrap;font-size:0.8rem;color:var(--dim)">`
     + `${mLabel}<br>${rLabel}${sLabel ? '<br>' + sLabel : ''}</td>`;
 }
