@@ -10,6 +10,7 @@ After flashing, use **Settings → Board** to configure the correct GPIO pins fo
 
 | Version | Date | Notes |
 |---|---|---|
+| **2.1.13** | 2026-08-17 | Restores the headroom OTA depends on, and makes its diagnostic tell the truth. The TCP window (2920→5760) and `max_open_sockets` (7→8) raised in 2.1.10 were meant to stop page-load stalls, but the real cause of those was WiFi modem sleep — fixed in 2.1.11 — and the page is gzipped to ~24 KB now, so both only ate the socket and heap margin that an outbound HTTPS needs; the starvation they encroached on *was* the 2.1.6 bug. Both reverted. `/api/ota/check` now reports the client's own `errno` (read before cleanup, so `EMFILE`/`ENFILE` is visible), the number of free LWIP sockets at the moment of the attempt, and labels the TLS probe for what it is — a check made *after* the failed client's resources were already released, which therefore could never see a shortage and always reported success. |
 | **2.1.12** | 2026-08-17 | Fixes three defects behind corrupted Alt+numpad output (a slot typed `♥chlьchtern` instead of `Schlüchtern`). (1) The key pass-through forwarded reports while a substitution was typing — including the release of the trigger combo itself, which arrives a few hundred ms in. The host holds one modifier state, so that release cleared the Alt an Alt+numpad sequence depended on and the host committed the truncated code: `S` = Alt+0083 became Alt+3 = `♥`. Keys are now dropped for the duration of the substitution. (2) `tud_hid_keyboard_report()`'s return value was ignored, so a report that failed to queue vanished silently — fatal for `0083`, where losing the release between the two zeroes merges them into one press. Sends now retry. (3) New typing mode **Alt codes — hex Unicode**: the decimal form resolves through the ANSI code page of the host's active input language, so under a Cyrillic layout `ü` is unreachable (CP1251 has no such character); the hex form carries the code point itself. Requires `EnableHexNumpad` on the host. |
 | **2.1.11** | 2026-08-16 | (1) The WiFi radio no longer sleeps while the web interface is running. IDF's default modem sleep parks the station between DTIM beacons; measured on a weak link (RSSI −90) that meant ICMP payloads of 150 B losing 50% and 200 B losing 100%, so page loads never completed while small JSON replies still got through. With the radio held awake, every size from 56 B to 1400 B ran at 0% loss and the page went from never loading in 50 s to 10/10 loads at ~0.15 s. Normal power saving is restored when the interface closes; the board is USB-powered, so the milliamps cost nothing. (2) Text substitutions gain a per-slot **typing mode**: Auto (unchanged default), Alt codes only — every character via Alt+numpad, immune to the host's keyboard layout — and Scan codes only, for macOS/Linux hosts where Alt+numpad does not exist. A scan code is a key position, so on a non-US layout even plain ASCII like `@ \ #` arrived wrong. Passwords and TOTP stay on Auto. |
 | **2.1.10** | 2026-08-16 | Web UI responsiveness and the dead-button bug. Root cause: `esp_http_server` runs a single thread, so sending the ~103 KB uncompressed SPA monopolised it for the whole transfer — on a weak link every other request queued behind it, and `btn_task` calling the blocking `httpd_stop()` froze the button for just as long. Fixes: (1) the page is gzipped at build time, 105 733 → 24 162 B; (2) new `web_ui_stop_async()` used by the button, idle timer and `/api/logout`; (3) WebSocket broadcasts verify `httpd_ws_get_fd_info()` and a `close_fn` evicts dead fds — a recycled fd could otherwise splice a WS frame into an HTTP response; (4) TCP window 2920 → 5760; (5) `/api/time` no longer extends the idle timeout, so a browser tab left open can no longer hold the config surface open indefinitely; (6) long-press work moved out of the esp_timer callback into `btn_task`; (7) `cfg.max_open_sockets = 8` and three dead Kconfig lines removed. Also persists BLE bonds across reboots (`CONFIG_BT_NIMBLE_NVS_PERSIST`), so a power cycle no longer forces a re-pairing. |
@@ -58,9 +59,31 @@ After flashing, use **Settings → Board** to configure the correct GPIO pins fo
 
 ---
 
-## Files — v2.1.12
+## Files — v2.1.13
 
 Two variants are available.  Use the **standard** variant for a normal install.  Use the **encrypted** variant if you want hardware-level AES-XTS flash encryption.
+
+### Standard (no encryption)
+
+| File | Flash address | Description |
+|---|---|---|
+| `bootloader-2.1.13.bin` | `0x0` | Second-stage bootloader |
+| `partition-table-2.1.13.bin` | `0x8000` | Partition layout (NVS + dual OTA slots) |
+| `ota_data_initial-2.1.13.bin` | `0x10000` | OTA slot selector (initial state) |
+| `bluepass-2.1.13.bin` | `0x20000` | Main application |
+
+### With flash encryption (recommended)
+
+| File | Flash address | Description |
+|---|---|---|
+| `bootloader-2.1.13-enc.bin` | `0x0` | Bootloader with encryption support |
+| `partition-table-2.1.13-enc.bin` | `0x8000` | Partition layout |
+| `ota_data_initial-2.1.13-enc.bin` | `0x10000` | OTA slot selector |
+| `bluepass-2.1.13-enc.bin` | `0x20000` | Main application (encryption-enabled build) |
+
+---
+
+## Files — v2.1.12 (previous stable)
 
 ### Standard (no encryption)
 
@@ -71,7 +94,7 @@ Two variants are available.  Use the **standard** variant for a normal install. 
 | `ota_data_initial-2.1.12.bin` | `0x10000` | OTA slot selector (initial state) |
 | `bluepass-2.1.12.bin` | `0x20000` | Main application |
 
-### With flash encryption (recommended)
+### With flash encryption
 
 | File | Flash address | Description |
 |---|---|---|
@@ -79,28 +102,6 @@ Two variants are available.  Use the **standard** variant for a normal install. 
 | `partition-table-2.1.12-enc.bin` | `0x8000` | Partition layout |
 | `ota_data_initial-2.1.12-enc.bin` | `0x10000` | OTA slot selector |
 | `bluepass-2.1.12-enc.bin` | `0x20000` | Main application (encryption-enabled build) |
-
----
-
-## Files — v2.1.11 (previous stable)
-
-### Standard (no encryption)
-
-| File | Flash address | Description |
-|---|---|---|
-| `bootloader-2.1.11.bin` | `0x0` | Second-stage bootloader |
-| `partition-table-2.1.11.bin` | `0x8000` | Partition layout (NVS + dual OTA slots) |
-| `ota_data_initial-2.1.11.bin` | `0x10000` | OTA slot selector (initial state) |
-| `bluepass-2.1.11.bin` | `0x20000` | Main application |
-
-### With flash encryption
-
-| File | Flash address | Description |
-|---|---|---|
-| `bootloader-2.1.11-enc.bin` | `0x0` | Bootloader with encryption support |
-| `partition-table-2.1.11-enc.bin` | `0x8000` | Partition layout |
-| `ota_data_initial-2.1.11-enc.bin` | `0x10000` | OTA slot selector |
-| `bluepass-2.1.11-enc.bin` | `0x20000` | Main application (encryption-enabled build) |
 
 ---
 
@@ -210,10 +211,10 @@ esptool.py \
   --flash_mode dio \
   --flash_freq 80m \
   --flash_size 4MB \
-  0x0     bootloader-2.1.12.bin \
-  0x8000  partition-table-2.1.12.bin \
-  0x10000 ota_data_initial-2.1.12.bin \
-  0x20000 bluepass-2.1.12.bin
+  0x0     bootloader-2.1.13.bin \
+  0x8000  partition-table-2.1.13.bin \
+  0x10000 ota_data_initial-2.1.13.bin \
+  0x20000 bluepass-2.1.13.bin
 ```
 
 ### With flash encryption (recommended, advanced)
@@ -231,10 +232,10 @@ esptool.py \
   --flash_mode dio \
   --flash_freq 80m \
   --flash_size 4MB \
-  0x0     bootloader-2.1.12-enc.bin \
-  0x8000  partition-table-2.1.12-enc.bin \
-  0x10000 ota_data_initial-2.1.12-enc.bin \
-  0x20000 bluepass-2.1.12-enc.bin
+  0x0     bootloader-2.1.13-enc.bin \
+  0x8000  partition-table-2.1.13-enc.bin \
+  0x10000 ota_data_initial-2.1.13-enc.bin \
+  0x20000 bluepass-2.1.13-enc.bin
 ```
 
 After flashing, the bootloader generates an AES-XTS key, burns it into eFuse, and reboots into Development mode automatically.
@@ -270,10 +271,10 @@ esptool.py ^
   --flash_mode dio ^
   --flash_freq 80m ^
   --flash_size 4MB ^
-  0x0     bootloader-2.1.12.bin ^
-  0x8000  partition-table-2.1.12.bin ^
-  0x10000 ota_data_initial-2.1.12.bin ^
-  0x20000 bluepass-2.1.12.bin
+  0x0     bootloader-2.1.13.bin ^
+  0x8000  partition-table-2.1.13.bin ^
+  0x10000 ota_data_initial-2.1.13.bin ^
+  0x20000 bluepass-2.1.13.bin
 ```
 
 Replace `COM3` with your actual port number.  
@@ -290,10 +291,10 @@ For the encrypted variant use the `-enc` filenames (see Linux/macOS section abov
 
    | File | Address |
    |---|---|
-   | `bootloader-2.1.12.bin` | `0x0` |
-   | `partition-table-2.1.12.bin` | `0x8000` |
-   | `ota_data_initial-2.1.12.bin` | `0x10000` |
-   | `bluepass-2.1.12.bin` | `0x20000` |
+   | `bootloader-2.1.13.bin` | `0x0` |
+   | `partition-table-2.1.13.bin` | `0x8000` |
+   | `ota_data_initial-2.1.13.bin` | `0x10000` |
+   | `bluepass-2.1.13.bin` | `0x20000` |
 
 5. Set **COM** to your port, **BAUD** to `460800`.
 6. Set **SPI SPEED: 80 MHz**, **SPI MODE: DIO**, **FLASH SIZE: 4MB**.
