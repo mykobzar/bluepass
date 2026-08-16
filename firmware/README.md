@@ -79,25 +79,25 @@ Two variants are available.  Use the **standard** variant for a normal install. 
 
 ---
 
-## Files — v2.1.7 (previous stable)
+## Files — v2.1.8 (previous stable)
 
 ### Standard (no encryption)
 
 | File | Flash address | Description |
 |---|---|---|
-| `bootloader-2.1.7.bin` | `0x0` | Second-stage bootloader |
-| `partition-table-2.1.7.bin` | `0x8000` | Partition layout (NVS + dual OTA slots) |
-| `ota_data_initial-2.1.7.bin` | `0x10000` | OTA slot selector (initial state) |
-| `bluepass-2.1.7.bin` | `0x20000` | Main application |
+| `bootloader-2.1.8.bin` | `0x0` | Second-stage bootloader |
+| `partition-table-2.1.8.bin` | `0x8000` | Partition layout (NVS + dual OTA slots) |
+| `ota_data_initial-2.1.8.bin` | `0x10000` | OTA slot selector (initial state) |
+| `bluepass-2.1.8.bin` | `0x20000` | Main application |
 
 ### With flash encryption
 
 | File | Flash address | Description |
 |---|---|---|
-| `bootloader-2.1.7-enc.bin` | `0x0` | Bootloader with encryption support |
-| `partition-table-2.1.7-enc.bin` | `0x8000` | Partition layout |
-| `ota_data_initial-2.1.7-enc.bin` | `0x10000` | OTA slot selector |
-| `bluepass-2.1.7-enc.bin` | `0x20000` | Main application (encryption-enabled build) |
+| `bootloader-2.1.8-enc.bin` | `0x0` | Bootloader with encryption support |
+| `partition-table-2.1.8-enc.bin` | `0x8000` | Partition layout |
+| `ota_data_initial-2.1.8-enc.bin` | `0x10000` | OTA slot selector |
+| `bluepass-2.1.8-enc.bin` | `0x20000` | Main application (encryption-enabled build) |
 
 ---
 
